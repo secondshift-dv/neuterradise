@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "brass",
+  "name": "Brass",
+  "isDark": true,
+  "colors": {
+    "canvas": "#FF14100C",
+    "surface1": "#FF1D1811",
+    "surface2": "#FF261F16",
+    "surface3": "#FF2F271B",
+    "surfaceElevated": "#FF382E20",
+    "surfaceOverlay": "#F2261F16",
+    "surfaceHover": "#FF3B3122",
+    "surfacePressed": "#FF453927",
+    "surfaceSelected": "#FF4F412C",
+    "textPrimary": "#FFF8F1E4",
+    "textSecondary": "#FFE0D2B8",
+    "textMuted": "#FFB3A48B",
+    "textDisabled": "#FF74695A",
+    "textInverse": "#FF1D1811",
+    "textOnAccent": "#FF1A1206",
+    "textLink": "#FFE3B860",
+    "borderSubtle": "#33564A34",
+    "borderDefault": "#66665738",
+    "borderStrong": "#99897546",
+    "borderInteractive": "#AAB09153",
+    "borderSelected": "#FFDDA845",
+    "focus": "#FFF0C878",
+    "accent": "#FFC8922E",
+    "accentHover": "#FFDDA845",
+    "accentPressed": "#FFB07D1F",
+    "accentSecondary": "#FF6B5424",
+    "selection": "#66A07A2E",
+    "selectionHover": "#88A07A2E",
+    "info": "#FF7FB6E8",
+    "success": "#FF8FCB86",
+    "warning": "#FFF0B429",
+    "danger": "#FFE8737D",
+    "dangerHover": "#FFF0909A"
+  },
+  "typography": {
+    "displayFamily": "Segoe UI Variable Display",
+    "headingFamily": "Segoe UI Variable Display",
+    "bodyFamily": "Segoe UI Variable Text",
+    "monoFamily": "Consolas"
+  },
+  "shape": {
+    "xs": 2,
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "xl": 18
+  },
+  "motion": {
+    "fastMs": 130,
+    "normalMs": 240,
+    "slowMs": 380,
+    "cinematicMs": 680
+  },
+  "background": {
+    "kind": "RadialGlow"
+  },
+  "morphology": {
+    "navigationTreatment": "StrongBorder",
+    "cardPersonality": "Framed",
+    "chromeTreatment": "Elevated",
+    "focusTreatment": "Ring",
+    "borderWeight": 1.8,
+    "elevationStrength": 0.85,
+    "glowStrength": 0.35,
+    "panelOpacity": 1.0,
+    "motionIntensity": 0.85,
+    "navigationRadiusScale": 0.3
+  }
+}

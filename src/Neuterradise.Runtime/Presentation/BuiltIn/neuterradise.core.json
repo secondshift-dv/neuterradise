@@ -1,0 +1,474 @@
+{
+  "schemaVersion": 1,
+  "packId": "builtin.neuterradise",
+  "version": "1.0.0",
+  "name": "Neu Terradise",
+  "author": "Neu Terradise",
+  "description": "The application's own presentation. It uses exactly the same contract, validator and compiler as user packs.",
+  "license": "Proprietary (application payload)",
+  "minContractVersion": 1,
+  "assets": [
+    { "id": "art.vista", "kind": "image", "path": "assets/home-header.png" }
+  ],
+  "definitions": [
+    { "id": "builtin.neuterradise.theme.abyss", "kind": "theme", "name": "Abyss", "description": "Deep cinematic violet. Smoked glass, fog and a cold blue-violet halo.", "previewAccent": "#FF6D28D9",
+      "spec": { "themeId": "abyss", "material": { "personality": "smoked-glass", "atmosphere": "fog", "grain": 0.03, "glassOpacity": 0.9, "glassBlur": 18, "specular": 0.35, "rimLight": 0.55, "ambientPrimary": "token:accent", "ambientSecondary": "#FF3B5BDB", "frameAffinity": ["obsidian", "double-ring", "celestial"], "preferredBackdrop": "builtin.neuterradise.backdrop.nebula", "preferredSpotlight": "builtin.neuterradise.spotlight.cinematic" } } },
+    { "id": "builtin.neuterradise.theme.brass", "kind": "theme", "name": "Brass", "description": "Warm collector. Brushed metal, amber specular and drifting dust.", "previewAccent": "#FFB7791F",
+      "spec": { "themeId": "brass", "material": { "personality": "brass-metal", "atmosphere": "dust", "grain": 0.05, "glassOpacity": 0.92, "glassBlur": 14, "specular": 0.6, "rimLight": 0.45, "ambientPrimary": "#FFE0A040", "ambientSecondary": "token:accentSecondary", "frameAffinity": ["brass", "gold", "champion", "royal"], "preferredBackdrop": "builtin.neuterradise.backdrop.ember", "preferredSpotlight": "builtin.neuterradise.spotlight.editorial" } } },
+    { "id": "builtin.neuterradise.theme.contract", "kind": "theme", "name": "Contract", "description": "Dossier precision. Tactical acrylic, steel-blue edges, near-static light.", "previewAccent": "#FF3B82F6",
+      "spec": { "themeId": "contract", "material": { "personality": "tactical-acrylic", "atmosphere": "precision", "grain": 0.01, "glassOpacity": 0.95, "glassBlur": 10, "specular": 0.2, "rimLight": 0.4, "ambientPrimary": "#FF4A7AB0", "ambientSecondary": "token:accentSecondary", "frameAffinity": ["hud", "minimal", "silver"], "preferredBackdrop": "builtin.neuterradise.backdrop.precision", "preferredSpotlight": "builtin.neuterradise.spotlight.split" } } },
+    { "id": "builtin.neuterradise.theme.fresh", "kind": "theme", "name": "Fresh", "description": "Airy white frost with diffuse mint daylight.", "previewAccent": "#FF10B981",
+      "spec": { "themeId": "fresh", "material": { "personality": "white-frost", "atmosphere": "daylight", "grain": 0.015, "glassOpacity": 0.95, "glassBlur": 20, "specular": 0.5, "rimLight": 0.3, "ambientPrimary": "#FF7FE0C0", "ambientSecondary": "token:accentSecondary", "frameAffinity": ["minimal", "soft-ring"], "preferredBackdrop": "builtin.neuterradise.backdrop.daylight", "preferredSpotlight": "builtin.neuterradise.spotlight.poster" } } },
+    { "id": "builtin.neuterradise.theme.inkwell", "kind": "theme", "name": "Inkwell", "description": "Dark elegant ink glass with silver edges and smoke drift.", "previewAccent": "#FF94A3B8",
+      "spec": { "themeId": "inkwell", "material": { "personality": "ink-glass", "atmosphere": "ink", "grain": 0.06, "glassOpacity": 0.9, "glassBlur": 16, "specular": 0.3, "rimLight": 0.5, "ambientPrimary": "#FFB8C2D6", "ambientSecondary": "token:accentSecondary", "frameAffinity": ["obsidian", "silver", "arcane"], "preferredBackdrop": "builtin.neuterradise.backdrop.ink", "preferredSpotlight": "builtin.neuterradise.spotlight.editorial" } } },
+    { "id": "builtin.neuterradise.theme.ivory", "kind": "theme", "name": "Ivory", "description": "Warm editorial light theme. Milky paper glass and cream reflections.", "previewAccent": "#FFB45309",
+      "spec": { "themeId": "ivory", "material": { "personality": "milky-paper", "atmosphere": "editorial", "grain": 0.045, "glassOpacity": 0.96, "glassBlur": 14, "specular": 0.4, "rimLight": 0.25, "ambientPrimary": "#FFD9B26A", "ambientSecondary": "token:accentSecondary", "frameAffinity": ["gold", "floral", "minimal"], "preferredBackdrop": "builtin.neuterradise.backdrop.paper", "preferredSpotlight": "builtin.neuterradise.spotlight.editorial" } } },
+    { "id": "builtin.neuterradise.theme.neon", "kind": "theme", "name": "Neon", "description": "Modern electric. Dark energy glass with cyan and magenta edges.", "previewAccent": "#FF22D3EE",
+      "spec": { "themeId": "neon", "material": { "personality": "energy-glass", "atmosphere": "electric", "grain": 0.02, "glassOpacity": 0.88, "glassBlur": 18, "specular": 0.45, "rimLight": 0.8, "ambientPrimary": "#FF22D3EE", "ambientSecondary": "#FFE879F9", "frameAffinity": ["neon-circuit", "cyber", "holographic"], "preferredBackdrop": "builtin.neuterradise.backdrop.neon", "preferredSpotlight": "builtin.neuterradise.spotlight.split" } } },
+    { "id": "builtin.neuterradise.theme.pulse", "kind": "theme", "name": "Pulse", "description": "Energetic chroma glass with a slow flowing aura.", "previewAccent": "#FFEC4899",
+      "spec": { "themeId": "pulse", "material": { "personality": "chroma-glass", "atmosphere": "chroma", "grain": 0.02, "glassOpacity": 0.9, "glassBlur": 18, "specular": 0.4, "rimLight": 0.6, "ambientPrimary": "token:accent", "ambientSecondary": "#FF38BDF8", "frameAffinity": ["soft-ring", "holographic"], "preferredBackdrop": "builtin.neuterradise.backdrop.aurora", "preferredSpotlight": "builtin.neuterradise.spotlight.cinematic" } } },
+
+    { "id": "builtin.neuterradise.type.standard", "kind": "typography", "name": "Neu Standard", "description": "Segoe UI Variable throughout. Clean, modern and highly readable.",
+      "spec": { "scale": 1.0, "roles": { "display": { "family": "Segoe UI Variable Display", "fallback": "Segoe UI" }, "heading": { "family": "Segoe UI Variable Display", "fallback": "Segoe UI" }, "body": { "family": "Segoe UI Variable Text", "fallback": "Segoe UI" }, "metadata": { "family": "Segoe UI Variable Text", "fallback": "Segoe UI" }, "mono": { "family": "Cascadia Mono", "fallback": "Consolas" } } } },
+    { "id": "builtin.neuterradise.type.editorial", "kind": "typography", "name": "Editorial Serif", "description": "A restrained serif for display and headings; body stays sans for reading.",
+      "spec": { "scale": 1.0, "roles": { "display": { "family": "Georgia", "fallback": "Segoe UI" }, "heading": { "family": "Georgia", "fallback": "Segoe UI" }, "body": { "family": "Segoe UI Variable Text", "fallback": "Segoe UI" }, "metadata": { "family": "Segoe UI Variable Text", "fallback": "Segoe UI" }, "mono": { "family": "Cascadia Mono", "fallback": "Consolas" } } } },
+    { "id": "builtin.neuterradise.type.technical", "kind": "typography", "name": "Technical", "description": "Bahnschrift for display, headings and metadata; a precise dossier voice.",
+      "spec": { "scale": 1.0, "roles": { "display": { "family": "Bahnschrift", "fallback": "Segoe UI" }, "heading": { "family": "Bahnschrift SemiBold", "fallback": "Segoe UI" }, "body": { "family": "Segoe UI", "fallback": "Tahoma" }, "metadata": { "family": "Bahnschrift", "fallback": "Segoe UI" }, "mono": { "family": "Cascadia Mono", "fallback": "Consolas" } } } },
+    { "id": "builtin.neuterradise.type.large", "kind": "typography", "name": "Neu Large", "description": "The standard families at a 10% larger reading scale.",
+      "spec": { "scale": 1.1, "roles": { "display": { "family": "Segoe UI Variable Display", "fallback": "Segoe UI" }, "heading": { "family": "Segoe UI Variable Display", "fallback": "Segoe UI" }, "body": { "family": "Segoe UI Variable Text", "fallback": "Segoe UI" }, "metadata": { "family": "Segoe UI Variable Text", "fallback": "Segoe UI" }, "mono": { "family": "Cascadia Mono", "fallback": "Consolas" } } } },
+
+    { "id": "builtin.neuterradise.icons.line", "kind": "icon-pack", "name": "Neu Line", "description": "The original line icons at a balanced stroke.", "spec": { "strokeWidth": 1.6 } },
+    { "id": "builtin.neuterradise.icons.bold", "kind": "icon-pack", "name": "Neu Bold", "description": "Heavier strokes for high-contrast, compact or large-scale use.", "spec": { "strokeWidth": 2.3 } },
+    { "id": "builtin.neuterradise.icons.fine", "kind": "icon-pack", "name": "Neu Fine", "description": "Hairline strokes for an airy editorial look.", "spec": { "strokeWidth": 1.1 } },
+
+    { "id": "builtin.neuterradise.motion.cinematic", "kind": "motion-preset", "name": "Cinematic", "description": "Slow, rich ambient motion with smooth depth transitions.",
+      "spec": { "durationScale": 1.0, "ambientSpeed": 1.0, "parallaxAmplitude": 1.0, "sheenSpeed": 1.0, "hoverLift": 1.03, "routeTransition": "slide-fade", "spotlightTransition": "crossfade-depth", "frameMotion": "full" } },
+    { "id": "builtin.neuterradise.motion.calm", "kind": "motion-preset", "name": "Calm", "description": "Gentler timing, subdued ambience and soft fades.",
+      "spec": { "durationScale": 1.25, "ambientSpeed": 0.55, "parallaxAmplitude": 0.55, "sheenSpeed": 0.6, "hoverLift": 1.02, "routeTransition": "fade", "spotlightTransition": "fade", "frameMotion": "subtle" } },
+    { "id": "builtin.neuterradise.motion.energetic", "kind": "motion-preset", "name": "Energetic", "description": "Snappier timing and livelier ambience on signature surfaces.",
+      "spec": { "durationScale": 0.85, "ambientSpeed": 1.4, "parallaxAmplitude": 1.25, "sheenSpeed": 1.5, "hoverLift": 1.04, "routeTransition": "depth", "spotlightTransition": "slide", "frameMotion": "full" } },
+    { "id": "builtin.neuterradise.motion.minimal", "kind": "motion-preset", "name": "Minimal", "description": "Almost no continuous motion; short fades only.",
+      "spec": { "durationScale": 0.8, "ambientSpeed": 0.0, "parallaxAmplitude": 0.0, "sheenSpeed": 0.0, "hoverLift": 1.0, "routeTransition": "none", "spotlightTransition": "fade", "frameMotion": "static" } },
+
+    { "id": "builtin.neuterradise.backdrop.nebula", "kind": "backdrop", "name": "Nebula Drift", "description": "Layered violet glows, living media light, fog, dust and a slow light sweep.", "previewAccent": "#FF6D28D9",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 7 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 160, "amplitude": 0.08, "period": 40, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.55, "centerX": 0.22, "centerY": 0.18, "radius": 0.75, "amplitude": 0.12, "period": 26, "depth": 0.3, "blend": "screen" },
+          { "kind": "radial-glow", "color": "token:ambientSecondary", "opacity": 0.42, "centerX": 0.82, "centerY": 0.35, "radius": 0.6, "amplitude": 0.15, "period": 34, "depth": 0.6, "blend": "screen" },
+          { "kind": "image", "source": "media-ambient", "opacity": 0.3, "blur": 28, "scale": 1.18, "amplitude": 0.04, "period": 30, "depth": 0.5, "blend": "soft-light" },
+          { "kind": "fog", "color": "token:lightAmbient", "opacity": 0.38, "scale": 1.3, "speed": 0.6, "period": 60 },
+          { "kind": "particles", "count": 70, "color": "token:lightRim", "sizeMin": 0.6, "sizeMax": 2.2, "speed": 0.35, "opacity": 0.75 },
+          { "kind": "light-sweep", "color": "token:lightSpecular", "opacity": 0.16, "period": 14, "width": 0.16, "angle": 115 },
+          { "kind": "vignette", "opacity": 0.55 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 160, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.45, "centerX": 0.25, "centerY": 0.2, "radius": 0.75, "amplitude": 0.04, "period": 60, "blend": "screen" },
+          { "kind": "image", "source": "media-ambient", "opacity": 0.22, "blur": 28, "scale": 1.15, "blend": "soft-light" },
+          { "kind": "vignette", "opacity": 0.5 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 160, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.4, "centerX": 0.25, "centerY": 0.2, "radius": 0.75 },
+          { "kind": "vignette", "opacity": 0.45 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.aurora", "kind": "backdrop", "name": "Aurora Veil", "description": "A slow chroma flow across the field with a soft sweeping highlight.", "previewAccent": "#FFEC4899",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 5 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 120, "amplitude": 0.12, "period": 30, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:ambientPrimary", "offset": 0.55 }, { "color": "token:ambientSecondary", "offset": 1 } ], "opacity": 0.55 },
+          { "kind": "radial-glow", "color": "token:ambientSecondary", "opacity": 0.5, "centerX": 0.7, "centerY": 0.1, "radius": 0.8, "amplitude": 0.2, "period": 22, "blend": "screen" },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.45, "centerX": 0.15, "centerY": 0.6, "radius": 0.7, "amplitude": 0.18, "period": 28, "blend": "screen" },
+          { "kind": "light-sweep", "color": "token:lightSpecular", "opacity": 0.14, "period": 18, "width": 0.25, "angle": 100 },
+          { "kind": "noise", "opacity": 0.04 },
+          { "kind": "vignette", "opacity": 0.5 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 120, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:ambientPrimary", "offset": 0.55 }, { "color": "token:ambientSecondary", "offset": 1 } ], "opacity": 0.5 },
+          { "kind": "radial-glow", "color": "token:ambientSecondary", "opacity": 0.4, "centerX": 0.7, "centerY": 0.1, "radius": 0.8, "amplitude": 0.05, "period": 60 },
+          { "kind": "vignette", "opacity": 0.45 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 120, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:ambientPrimary", "offset": 0.55 }, { "color": "token:ambientSecondary", "offset": 1 } ], "opacity": 0.45 },
+          { "kind": "vignette", "opacity": 0.4 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.ember", "kind": "backdrop", "name": "Ember Dust", "description": "Warm amber light with drifting dust and brushed-metal grain.", "previewAccent": "#FFB7791F",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 4 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.5, "centerX": 0.3, "centerY": 0.05, "radius": 0.9, "amplitude": 0.06, "period": 12, "blend": "screen" },
+          { "kind": "image", "source": "media-ambient", "opacity": 0.24, "blur": 24, "scale": 1.12, "amplitude": 0.03, "period": 34, "depth": 0.4, "blend": "soft-light" },
+          { "kind": "particles", "count": 90, "color": "token:ambientPrimary", "sizeMin": 0.5, "sizeMax": 1.6, "speed": 0.2, "opacity": 0.6 },
+          { "kind": "noise", "opacity": 0.05 },
+          { "kind": "vignette", "opacity": 0.6 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.42, "centerX": 0.3, "centerY": 0.05, "radius": 0.9 },
+          { "kind": "particles", "count": 20, "color": "token:ambientPrimary", "sizeMin": 0.5, "sizeMax": 1.2, "speed": 0.1, "opacity": 0.4 },
+          { "kind": "vignette", "opacity": 0.55 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.38, "centerX": 0.3, "centerY": 0.05, "radius": 0.9 },
+          { "kind": "noise", "opacity": 0.04 },
+          { "kind": "vignette", "opacity": 0.5 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.ink", "kind": "backdrop", "name": "Ink Smoke", "description": "Charcoal ink drift in two slow layers with a cool silver edge.", "previewAccent": "#FF94A3B8",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 4 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 200, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "fog", "color": "token:ambientPrimary", "opacity": 0.22, "scale": 1.6, "speed": 0.35, "period": 80 },
+          { "kind": "fog", "color": "token:lightAmbient", "opacity": 0.3, "scale": 1.0, "speed": 0.7, "period": 50 },
+          { "kind": "light-sweep", "color": "token:lightRim", "opacity": 0.1, "period": 22, "width": 0.1, "angle": 125 },
+          { "kind": "noise", "opacity": 0.06 },
+          { "kind": "vignette", "opacity": 0.7 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 200, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "fog", "color": "token:lightAmbient", "opacity": 0.18, "scale": 1.2, "speed": 0.2, "period": 90 },
+          { "kind": "vignette", "opacity": 0.65 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 200, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "noise", "opacity": 0.05 },
+          { "kind": "vignette", "opacity": 0.6 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.neon", "kind": "backdrop", "name": "Neon Pulse", "description": "Cyan and magenta energy that breathes behind dark glass.", "previewAccent": "#FF22D3EE",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 5 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 150, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.5, "centerX": 0.15, "centerY": 0.15, "radius": 0.55, "amplitude": 0.2, "period": 8, "blend": "screen" },
+          { "kind": "radial-glow", "color": "token:ambientSecondary", "opacity": 0.45, "centerX": 0.88, "centerY": 0.4, "radius": 0.55, "amplitude": 0.2, "period": 10, "blend": "screen" },
+          { "kind": "particles", "count": 40, "color": "token:ambientPrimary", "sizeMin": 0.8, "sizeMax": 2.0, "speed": 0.5, "opacity": 0.6 },
+          { "kind": "light-sweep", "color": "token:ambientPrimary", "opacity": 0.18, "period": 9, "width": 0.08, "angle": 105 },
+          { "kind": "vignette", "opacity": 0.6 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 150, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.42, "centerX": 0.15, "centerY": 0.15, "radius": 0.55, "amplitude": 0.05, "period": 30 },
+          { "kind": "radial-glow", "color": "token:ambientSecondary", "opacity": 0.35, "centerX": 0.88, "centerY": 0.4, "radius": 0.55 },
+          { "kind": "vignette", "opacity": 0.55 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 150, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.38, "centerX": 0.15, "centerY": 0.15, "radius": 0.55 },
+          { "kind": "radial-glow", "color": "token:ambientSecondary", "opacity": 0.3, "centerX": 0.88, "centerY": 0.4, "radius": 0.55 },
+          { "kind": "vignette", "opacity": 0.5 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.daylight", "kind": "backdrop", "name": "Daylight Frost", "description": "Soft near-static daylight for light themes.", "previewAccent": "#FF10B981",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 2 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 170, "amplitude": 0.03, "period": 50, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.35, "centerX": 0.8, "centerY": 0.0, "radius": 0.9, "amplitude": 0.04, "period": 45 },
+          { "kind": "image", "source": "media-ambient", "opacity": 0.14, "blur": 32, "scale": 1.1 },
+          { "kind": "noise", "opacity": 0.015 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 170, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.3, "centerX": 0.8, "centerY": 0.0, "radius": 0.9 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 170, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.paper", "kind": "backdrop", "name": "Paper Light", "description": "Warm editorial light with paper grain.", "previewAccent": "#FFB45309",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 2 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 175, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.3, "centerX": 0.25, "centerY": 0.0, "radius": 0.85, "amplitude": 0.03, "period": 40 },
+          { "kind": "light-sweep", "color": "token:lightSpecular", "opacity": 0.2, "period": 26, "width": 0.3, "angle": 110 },
+          { "kind": "noise", "opacity": 0.045 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 175, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.26, "centerX": 0.25, "centerY": 0.0, "radius": 0.85 },
+          { "kind": "noise", "opacity": 0.04 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 175, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "noise", "opacity": 0.035 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.precision", "kind": "backdrop", "name": "Precision", "description": "Near-static steel light with a thin tactical scan.", "previewAccent": "#FF3B82F6",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 2 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.3, "centerX": 0.5, "centerY": -0.1, "radius": 1.0 },
+          { "kind": "light-sweep", "color": "token:ambientPrimary", "opacity": 0.12, "period": 16, "width": 0.04, "angle": 90 },
+          { "kind": "noise", "opacity": 0.01 },
+          { "kind": "vignette", "opacity": 0.4 } ] },
+        "reduced": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "radial-glow", "color": "token:ambientPrimary", "opacity": 0.28, "centerX": 0.5, "centerY": -0.1, "radius": 1.0 },
+          { "kind": "vignette", "opacity": 0.35 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "vignette", "opacity": 0.3 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.vista", "kind": "backdrop", "name": "Vista", "description": "The Neu Terradise landscape with slow parallax, mist and drifting light.", "previewAccent": "#FF7C3AED",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 4 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "image", "asset": "art.vista", "opacity": 0.85, "scale": 1.12, "amplitude": 0.05, "period": 36, "depth": 0.4 },
+          { "kind": "fog", "color": "token:lightAmbient", "opacity": 0.3, "scale": 1.4, "speed": 0.5, "period": 70 },
+          { "kind": "particles", "count": 30, "color": "token:lightRim", "sizeMin": 0.6, "sizeMax": 1.8, "speed": 0.25, "opacity": 0.6 },
+          { "kind": "scrim", "color": "token:canvas", "opacity": 0.35, "angle": 90 },
+          { "kind": "vignette", "opacity": 0.55 } ] },
+        "reduced": { "layers": [
+          { "kind": "image", "asset": "art.vista", "opacity": 0.8, "scale": 1.08 },
+          { "kind": "scrim", "color": "token:canvas", "opacity": 0.35, "angle": 90 },
+          { "kind": "vignette", "opacity": 0.5 } ] },
+        "fallback": { "layers": [
+          { "kind": "image", "asset": "art.vista", "opacity": 0.75, "scale": 1.05 },
+          { "kind": "scrim", "color": "token:canvas", "opacity": 0.4, "angle": 90 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.media", "kind": "backdrop", "name": "Living Media", "description": "The featured Profile's own artwork becomes the atmosphere.", "previewAccent": "#FF0EA5E9",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 3 },
+      "spec": { "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:canvas", "offset": 1 } ] },
+          { "kind": "image", "source": "media-ambient", "opacity": 0.75, "blur": 36, "scale": 1.3, "amplitude": 0.06, "period": 24, "depth": 0.6 },
+          { "kind": "media-tint", "opacity": 0.45 },
+          { "kind": "noise", "opacity": 0.03 },
+          { "kind": "vignette", "opacity": 0.65 } ] },
+        "reduced": { "layers": [
+          { "kind": "image", "source": "media-ambient", "opacity": 0.65, "blur": 36, "scale": 1.25 },
+          { "kind": "media-tint", "opacity": 0.4 },
+          { "kind": "vignette", "opacity": 0.6 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "media-tint", "opacity": 0.35 },
+          { "kind": "vignette", "opacity": 0.55 } ] } } } },
+
+    { "id": "builtin.neuterradise.backdrop.still", "kind": "backdrop", "name": "Still", "description": "A static theme field. No continuous motion at any tier.",
+      "performance": { "tier": "utility", "continuousAnimation": false, "offscreenPolicy": "suspend", "maxAnimatedLayers": 0 },
+      "spec": { "variants": {
+        "full": { "layers": [ { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] }, { "kind": "radial-glow", "color": "token:accentSecondary", "opacity": 0.4, "centerX": 0.5, "centerY": 0.0, "radius": 0.9 } ] },
+        "reduced": { "layers": [ { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] }, { "kind": "radial-glow", "color": "token:accentSecondary", "opacity": 0.4, "centerX": 0.5, "centerY": 0.0, "radius": 0.9 } ] },
+        "fallback": { "layers": [ { "kind": "gradient", "angle": 180, "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] }, { "kind": "radial-glow", "color": "token:accentSecondary", "opacity": 0.4, "centerX": 0.5, "centerY": 0.0, "radius": 0.9 } ] } } } },
+
+    { "id": "builtin.neuterradise.home.lobby", "kind": "home-layout", "name": "Cinematic Lobby", "description": "A tall Spotlight over flowing rails: Continue, Favorites, Profiles and a compact activity strip.",
+      "spec": { "hero": { "placement": "full-bleed", "heightFraction": 0.52, "minHeight": 300, "maxHeight": 640 },
+        "rails": [ { "id": "attention", "style": "compact", "maxItems": 3 }, { "id": "recent", "style": "tile" }, { "id": "favorites", "style": "poster" }, { "id": "profiles", "style": "tile" }, { "id": "discovery", "style": "strip", "maxItems": 6 }, { "id": "activity", "style": "strip", "maxItems": 8 } ] } },
+    { "id": "builtin.neuterradise.home.spotlight", "kind": "home-layout", "name": "Spotlight Focus", "description": "The featured Profile dominates; only Continue and Favorites follow.",
+      "spec": { "hero": { "placement": "full-bleed", "heightFraction": 0.64, "minHeight": 340, "maxHeight": 820 },
+        "rails": [ { "id": "recent", "style": "tile" }, { "id": "favorites", "style": "poster" }, { "id": "attention", "style": "compact", "maxItems": 3 } ] } },
+    { "id": "builtin.neuterradise.home.collection", "kind": "home-layout", "name": "Collection First", "description": "A shorter inset Spotlight with Profiles, connections and library statistics first.",
+      "spec": { "hero": { "placement": "inset", "heightFraction": 0.42, "minHeight": 260, "maxHeight": 520 },
+        "rails": [ { "id": "profiles", "style": "poster" }, { "id": "discovery", "style": "strip", "maxItems": 6 }, { "id": "recent", "style": "tile" }, { "id": "statistics", "style": "strip" }, { "id": "activity", "style": "strip", "maxItems": 8 } ] } },
+
+    { "id": "builtin.neuterradise.spotlight.cinematic", "kind": "spotlight-style", "name": "Cinematic", "description": "Identity on deep glass at the left; slow Ken Burns artwork; depth crossfade.",
+      "spec": { "composition": "cinematic-left", "motion": "ken-burns", "transition": "crossfade-depth", "rotationSeconds": 12, "showCover": true, "showOverview": true, "pagination": "counter-rail", "scrimStrength": 0.7 } },
+    { "id": "builtin.neuterradise.spotlight.poster", "kind": "spotlight-style", "name": "Poster", "description": "A centered framed Cover over drifting artwork.",
+      "spec": { "composition": "centered-poster", "motion": "parallax-drift", "transition": "fade", "rotationSeconds": 14, "showCover": true, "showOverview": false, "pagination": "counter-rail", "scrimStrength": 0.6 } },
+    { "id": "builtin.neuterradise.spotlight.split", "kind": "spotlight-style", "name": "Split Glass", "description": "Artwork and a glass identity panel share the field; slide transitions.",
+      "spec": { "composition": "split-glass", "motion": "parallax-drift", "transition": "slide", "rotationSeconds": 12, "showCover": true, "showOverview": true, "pagination": "counter", "scrimStrength": 0.55 } },
+    { "id": "builtin.neuterradise.spotlight.editorial", "kind": "spotlight-style", "name": "Editorial", "description": "Large display typography over still artwork with a soft fade.",
+      "spec": { "composition": "editorial", "motion": "still", "transition": "fade", "rotationSeconds": 16, "showCover": false, "showOverview": true, "pagination": "counter-rail", "scrimStrength": 0.75 } },
+
+    { "id": "builtin.neuterradise.gallery.grid", "kind": "gallery-layout", "name": "Grid", "description": "An adaptive grid that reflows with the window.",
+      "spec": { "primitive": "VirtualizedGrid", "itemMinWidth": 240, "itemMaxWidth": 380, "spacing": 16, "maxColumns": 10 } },
+    { "id": "builtin.neuterradise.gallery.poster-wall", "kind": "gallery-layout", "name": "Poster Wall", "description": "Dense uniform portrait posters.",
+      "spec": { "primitive": "VirtualizedUniformGrid", "itemMinWidth": 168, "itemMaxWidth": 230, "itemAspect": 0.6667, "spacing": 10, "maxColumns": 14, "preferredCard": "builtin.neuterradise.card.poster" } },
+    { "id": "builtin.neuterradise.gallery.large", "kind": "gallery-layout", "name": "Large Grid", "description": "Fewer, larger cards for showcase browsing.",
+      "spec": { "primitive": "VirtualizedGrid", "itemMinWidth": 360, "itemMaxWidth": 560, "spacing": 20, "maxColumns": 6 } },
+    { "id": "builtin.neuterradise.gallery.list", "kind": "gallery-layout", "name": "List", "description": "One Profile per row for fast scanning.",
+      "spec": { "primitive": "VirtualizedList", "itemMinWidth": 320, "itemMaxWidth": 960, "rowHeight": 76, "spacing": 8, "maxColumns": 1, "preferredCard": "builtin.neuterradise.card.compact" } },
+    { "id": "builtin.neuterradise.gallery.carousel", "kind": "gallery-layout", "name": "Carousel", "description": "A horizontal showcase strip.",
+      "spec": { "primitive": "VirtualizedCarousel", "itemMinWidth": 300, "itemMaxWidth": 420, "itemAspect": 0.75, "spacing": 18, "maxColumns": 1, "preferredCard": "builtin.neuterradise.card.prestige" } },
+
+    { "id": "builtin.neuterradise.card.cinematic", "kind": "profile-card", "name": "Cinematic", "description": "Full-bleed Banner, protected identity over the art.",
+      "spec": { "legacyVariant": "cinematic", "aspect": 1.7778, "art": "banner", "density": "standard", "hover": "lift", "frame": "lite",
+        "composition": { "type": "overlay", "children": [
+          { "type": "image", "slot": "profile.identity.banner", "stretch": "uniform-to-fill" },
+          { "type": "scrim", "direction": "to-top", "from": "token:heroScrimStrong", "to": "#00000000", "vAlign": "bottom", "height": 120 },
+          { "type": "badge", "slot": "profile.identity.favorite", "style": "glass", "hAlign": "right", "vAlign": "top", "margin": 10, "visibleWhen": "profile.identity.favorite" },
+          { "type": "stack", "orientation": "horizontal", "spacing": 10, "vAlign": "bottom", "margin": [14, 0, 14, 12], "children": [
+            { "type": "frame", "size": 44, "vAlign": "center" },
+            { "type": "stack", "spacing": 2, "vAlign": "center", "children": [
+              { "type": "text", "slot": "profile.identity.name", "role": "card-title", "color": "token:onMediaPrimary", "onMedia": true, "maxLines": 2 },
+              { "type": "text", "slot": "profile.identity.category", "role": "metadata", "color": "token:onMediaSecondary", "onMedia": true, "visibleWhen": "profile.identity.category" } ] } ] } ] } } },
+    { "id": "builtin.neuterradise.card.cinematic-tall", "kind": "profile-card", "name": "Cinematic Tall", "description": "Tall artwork with a strong title block.",
+      "spec": { "legacyVariant": "cinematic-tall", "aspect": 0.6667, "art": "cover-over-banner", "density": "standard", "hover": "lift", "frame": "none",
+        "composition": { "type": "overlay", "children": [
+          { "type": "image", "slot": "profile.identity.cover", "stretch": "uniform-to-fill" },
+          { "type": "scrim", "direction": "to-top", "from": "token:heroScrimStrong", "to": "#00000000", "vAlign": "bottom", "height": 170 },
+          { "type": "stack", "spacing": 4, "vAlign": "bottom", "margin": [14, 0, 14, 14], "children": [
+            { "type": "badge", "slot": "profile.identity.tier", "style": "glass", "hAlign": "left", "visibleWhen": "profile.identity.tier" },
+            { "type": "text", "slot": "profile.identity.name", "role": "section-title", "color": "token:onMediaPrimary", "onMedia": true, "maxLines": 2 },
+            { "type": "text", "slot": "profile.identity.tags", "role": "caption", "color": "token:onMediaSecondary", "onMedia": true, "visibleWhen": "profile.identity.tags" } ] },
+          { "type": "badge", "slot": "profile.identity.favorite", "style": "glass", "hAlign": "right", "vAlign": "top", "margin": 10, "visibleWhen": "profile.identity.favorite" } ] } } },
+    { "id": "builtin.neuterradise.card.poster", "kind": "profile-card", "name": "Poster", "description": "The Cover as a poster, name beneath. Minimal chrome.",
+      "spec": { "legacyVariant": "poster", "aspect": 0.6667, "art": "cover", "density": "minimal", "hover": "lift", "frame": "none",
+        "composition": { "type": "grid", "rows": ["*", "auto"], "children": [
+          { "type": "overlay", "row": 0, "children": [
+            { "type": "image", "slot": "profile.identity.cover", "stretch": "uniform-to-fill", "cornerRadius": "token:radiusCard" },
+            { "type": "badge", "slot": "profile.identity.favorite", "style": "glass", "hAlign": "right", "vAlign": "top", "margin": 8, "visibleWhen": "profile.identity.favorite" } ] },
+          { "type": "text", "row": 1, "slot": "profile.identity.name", "role": "card-title", "color": "token:textPrimary", "margin": [2, 8, 2, 0] } ] } } },
+    { "id": "builtin.neuterradise.card.portrait-frame", "kind": "profile-card", "name": "Portrait Frame", "description": "A framed Cover is the identity anchor on a grounded surface.",
+      "spec": { "legacyVariant": "portrait-frame", "aspect": 0.75, "art": "cover", "density": "standard", "hover": "spotlight", "frame": "lite",
+        "composition": { "type": "stack", "background": "token:surface2", "cornerRadius": "token:radiusCard", "padding": 16, "spacing": 8, "children": [
+          { "type": "frame", "size": 132, "hAlign": "center", "margin": [0, 6, 0, 4] },
+          { "type": "text", "slot": "profile.identity.name", "role": "card-title", "color": "token:textPrimary", "align": "center", "maxLines": 2 },
+          { "type": "text", "slot": "profile.identity.category", "role": "metadata", "color": "token:textSecondary", "align": "center", "visibleWhen": "profile.identity.category" },
+          { "type": "badge", "slot": "profile.identity.rating", "style": "text", "hAlign": "center", "visibleWhen": "profile.identity.rating" } ] } } },
+    { "id": "builtin.neuterradise.card.landscape", "kind": "profile-card", "name": "Landscape", "description": "Wide Banner with a grounded information strip.",
+      "spec": { "legacyVariant": "landscape", "aspect": 1.5, "art": "banner", "density": "standard", "hover": "lift", "frame": "lite",
+        "composition": { "type": "grid", "rows": ["*", "auto"], "children": [
+          { "type": "overlay", "row": 0, "children": [
+            { "type": "image", "slot": "profile.identity.banner", "stretch": "uniform-to-fill" },
+            { "type": "badge", "slot": "profile.identity.favorite", "style": "glass", "hAlign": "right", "vAlign": "top", "margin": 8, "visibleWhen": "profile.identity.favorite" } ] },
+          { "type": "grid", "row": 1, "columns": ["auto", "*", "auto"], "spacing": 10, "children": [
+            { "type": "shape", "column": 0, "columnSpan": 3, "fill": "token:surface2" },
+            { "type": "frame", "column": 0, "size": 36, "margin": [10, 8, 0, 8], "vAlign": "center" },
+            { "type": "stack", "column": 1, "spacing": 1, "vAlign": "center", "children": [
+              { "type": "text", "slot": "profile.identity.name", "role": "card-title", "color": "token:textPrimary" },
+              { "type": "text", "slot": "profile.identity.category", "role": "caption", "color": "token:textMuted", "visibleWhen": "profile.identity.category" } ] },
+            { "type": "badge", "column": 2, "slot": "profile.identity.rating", "style": "text", "vAlign": "center", "margin": [0, 0, 12, 0], "visibleWhen": "profile.identity.rating" } ] } ] } } },
+    { "id": "builtin.neuterradise.card.hero", "kind": "profile-card", "name": "Hero Card", "description": "Ultra-wide Banner with an editorial identity panel and Overview.",
+      "spec": { "legacyVariant": "hero-card", "aspect": 2.3333, "art": "banner", "density": "detailed", "hover": "sheen", "frame": "lite",
+        "composition": { "type": "overlay", "children": [
+          { "type": "image", "slot": "profile.identity.banner", "stretch": "uniform-to-fill" },
+          { "type": "scrim", "direction": "to-right", "from": "token:heroScrimStrong", "to": "#00000000" },
+          { "type": "stack", "spacing": 6, "vAlign": "center", "hAlign": "left", "width": 320, "margin": [20, 0, 0, 0], "children": [
+            { "type": "text", "slot": "profile.identity.category", "role": "micro", "color": "token:onMediaSecondary", "onMedia": true, "visibleWhen": "profile.identity.category" },
+            { "type": "text", "slot": "profile.identity.name", "role": "section-title", "color": "token:onMediaPrimary", "onMedia": true, "maxLines": 2 },
+            { "type": "text", "slot": "profile.overview", "role": "caption", "color": "token:onMediaSecondary", "onMedia": true, "maxLines": 2, "visibleWhen": "profile.overview" },
+            { "type": "text", "slot": "profile.identity.tags", "role": "micro", "color": "token:onMediaSecondary", "onMedia": true, "visibleWhen": "profile.identity.tags" } ] } ] } } },
+    { "id": "builtin.neuterradise.card.glass", "kind": "profile-card", "name": "Glass", "description": "Square art with a floating frosted identity strip.",
+      "spec": { "legacyVariant": "glass", "aspect": 1.0, "art": "cover", "density": "minimal", "hover": "spotlight", "frame": "none",
+        "composition": { "type": "overlay", "children": [
+          { "type": "image", "slot": "profile.identity.cover", "stretch": "uniform-to-fill" },
+          { "type": "stack", "vAlign": "bottom", "margin": 10, "padding": 10, "spacing": 2, "background": "token:glassStrip", "cornerRadius": "token:radiusMd", "children": [
+            { "type": "text", "slot": "profile.identity.name", "role": "card-title", "color": "token:onMediaPrimary", "onMedia": true },
+            { "type": "stack", "orientation": "horizontal", "spacing": 8, "children": [
+              { "type": "text", "slot": "profile.identity.category", "role": "caption", "color": "token:onMediaSecondary", "onMedia": true, "visibleWhen": "profile.identity.category" },
+              { "type": "badge", "slot": "profile.statistics.media-count", "style": "text" } ] } ] } ] } } },
+    { "id": "builtin.neuterradise.card.editorial", "kind": "profile-card", "name": "Editorial", "description": "Asymmetric image and typography composition.",
+      "spec": { "legacyVariant": "editorial", "aspect": 1.3333, "art": "cover", "density": "detailed", "hover": "lift", "frame": "none",
+        "composition": { "type": "grid", "columns": ["11*", "9*"], "children": [
+          { "type": "image", "column": 0, "slot": "profile.identity.cover", "stretch": "uniform-to-fill" },
+          { "type": "stack", "column": 1, "padding": 14, "spacing": 6, "background": "token:surface2", "children": [
+            { "type": "text", "slot": "profile.identity.category", "role": "micro", "color": "token:accent", "visibleWhen": "profile.identity.category" },
+            { "type": "text", "slot": "profile.identity.name", "role": "section-title", "color": "token:textPrimary", "maxLines": 3 },
+            { "type": "text", "slot": "profile.overview", "role": "caption", "color": "token:textSecondary", "maxLines": 4, "visibleWhen": "profile.overview" },
+            { "type": "text", "slot": "profile.identity.tags", "role": "micro", "color": "token:textMuted", "visibleWhen": "profile.identity.tags" } ] } ] } } },
+    { "id": "builtin.neuterradise.card.compact", "kind": "profile-card", "name": "Compact", "description": "A dense horizontal rail row.",
+      "spec": { "legacyVariant": "compact", "aspect": 3.4, "art": "cover", "density": "minimal", "hover": "none", "frame": "lite",
+        "composition": { "type": "stack", "orientation": "horizontal", "spacing": 12, "padding": 10, "background": "token:surface2", "cornerRadius": "token:radiusMd", "children": [
+          { "type": "frame", "size": 52, "vAlign": "center" },
+          { "type": "stack", "spacing": 1, "vAlign": "center", "children": [
+            { "type": "text", "slot": "profile.identity.name", "role": "card-title", "color": "token:textPrimary" },
+            { "type": "text", "slot": "profile.identity.category", "role": "caption", "color": "token:textMuted", "visibleWhen": "profile.identity.category" } ] },
+          { "type": "badge", "slot": "profile.statistics.media-count", "style": "outline", "vAlign": "center" } ] } } },
+    { "id": "builtin.neuterradise.card.minimal", "kind": "profile-card", "name": "Minimal", "description": "Rounded art and a name. Nothing else.",
+      "spec": { "legacyVariant": "minimal", "aspect": 0.86, "art": "cover", "density": "minimal", "hover": "lift", "frame": "none",
+        "composition": { "type": "grid", "rows": ["*", "auto"], "children": [
+          { "type": "image", "row": 0, "slot": "profile.identity.cover", "stretch": "uniform-to-fill", "cornerRadius": "token:radiusLg" },
+          { "type": "text", "row": 1, "slot": "profile.identity.name", "role": "control", "color": "token:textPrimary", "align": "center", "margin": [4, 8, 4, 0] } ] } } },
+    { "id": "builtin.neuterradise.card.stats", "kind": "profile-card", "name": "Stats", "description": "Artwork plus a clear statistics row.",
+      "spec": { "legacyVariant": "stats", "aspect": 1.15, "art": "cover", "density": "detailed", "hover": "lift", "frame": "none",
+        "composition": { "type": "grid", "rows": ["*", "auto"], "children": [
+          { "type": "overlay", "row": 0, "children": [
+            { "type": "image", "slot": "profile.identity.cover", "stretch": "uniform-to-fill" },
+            { "type": "scrim", "direction": "to-top", "from": "token:heroScrimStrong", "to": "#00000000", "vAlign": "bottom", "height": 80 },
+            { "type": "text", "slot": "profile.identity.name", "role": "card-title", "color": "token:onMediaPrimary", "onMedia": true, "vAlign": "bottom", "margin": [12, 0, 12, 10] } ] },
+          { "type": "stack", "row": 1, "orientation": "horizontal", "spacing": 16, "padding": 10, "background": "token:surface2", "children": [
+            { "type": "badge", "slot": "profile.statistics.media-count", "style": "text" },
+            { "type": "badge", "slot": "profile.statistics.related-count", "style": "text" },
+            { "type": "badge", "slot": "profile.identity.rating", "style": "text", "visibleWhen": "profile.identity.rating" } ] } ] } } },
+    { "id": "builtin.neuterradise.card.prestige", "kind": "profile-card", "name": "Prestige", "description": "A collectible frame on an energy-edged surface with a rare sheen.",
+      "spec": { "legacyVariant": "prestige", "aspect": 0.75, "art": "cover-over-banner", "density": "detailed", "hover": "sheen", "frame": "full",
+        "composition": { "type": "overlay", "children": [
+          { "type": "shape", "fill": "token:surface2", "stroke": "token:borderEnergy", "strokeThickness": 1.5, "cornerRadius": "token:radiusCard" },
+          { "type": "image", "slot": "profile.identity.banner", "stretch": "uniform-to-fill", "ambient": true, "opacity": 0.35, "cornerRadius": "token:radiusCard" },
+          { "type": "scrim", "direction": "radial", "from": "#00000000", "to": "token:heroScrimSoft" },
+          { "type": "stack", "spacing": 8, "vAlign": "center", "margin": 16, "children": [
+            { "type": "frame", "size": 150, "hAlign": "center" },
+            { "type": "badge", "slot": "profile.identity.tier", "style": "outline", "hAlign": "center", "visibleWhen": "profile.identity.tier" },
+            { "type": "text", "slot": "profile.identity.name", "role": "section-title", "color": "token:onMediaPrimary", "onMedia": true, "align": "center", "maxLines": 2 },
+            { "type": "text", "slot": "profile.identity.category", "role": "caption", "color": "token:onMediaSecondary", "onMedia": true, "align": "center", "visibleWhen": "profile.identity.category" } ] } ] } } },
+
+    { "id": "builtin.neuterradise.profile.cinematic", "kind": "profile-layout", "name": "Cinematic", "spec": { "preset": "cinematic" } },
+    { "id": "builtin.neuterradise.profile.cinematic-wide", "kind": "profile-layout", "name": "Cinematic Wide", "spec": { "preset": "cinematic-wide" } },
+    { "id": "builtin.neuterradise.profile.immersive", "kind": "profile-layout", "name": "Immersive", "spec": { "preset": "immersive" } },
+    { "id": "builtin.neuterradise.profile.editorial", "kind": "profile-layout", "name": "Editorial", "spec": { "preset": "editorial" } },
+    { "id": "builtin.neuterradise.profile.split-left", "kind": "profile-layout", "name": "Split Left", "spec": { "preset": "split-left" } },
+    { "id": "builtin.neuterradise.profile.split-right", "kind": "profile-layout", "name": "Split Right", "spec": { "preset": "split-right" } },
+    { "id": "builtin.neuterradise.profile.profile-focus", "kind": "profile-layout", "name": "Profile Focus", "spec": { "preset": "profile-focus" } },
+    { "id": "builtin.neuterradise.profile.showcase", "kind": "profile-layout", "name": "Showcase", "spec": { "preset": "showcase" } },
+    { "id": "builtin.neuterradise.profile.gallery-hero", "kind": "profile-layout", "name": "Gallery Hero", "spec": { "preset": "gallery-hero" } },
+    { "id": "builtin.neuterradise.profile.compact-hero", "kind": "profile-layout", "name": "Compact Hero", "spec": { "preset": "compact-hero" } },
+    { "id": "builtin.neuterradise.profile.minimal", "kind": "profile-layout", "name": "Minimal", "spec": { "preset": "minimal" } },
+    { "id": "builtin.neuterradise.profile.prestige", "kind": "profile-layout", "name": "Prestige", "spec": { "preset": "prestige" } },
+
+    { "id": "builtin.neuterradise.frame.none", "kind": "cover-frame", "name": "None", "spec": { "frameId": "none" } },
+    { "id": "builtin.neuterradise.frame.minimal", "kind": "cover-frame", "name": "Clean", "spec": { "frameId": "minimal" } },
+    { "id": "builtin.neuterradise.frame.silver", "kind": "cover-frame", "name": "Silver Line", "spec": { "frameId": "silver" } },
+    { "id": "builtin.neuterradise.frame.metal", "kind": "cover-frame", "name": "Brushed Metal", "spec": { "frameId": "metal" } },
+    { "id": "builtin.neuterradise.frame.gold", "kind": "cover-frame", "name": "Gilded", "spec": { "frameId": "gold" } },
+    { "id": "builtin.neuterradise.frame.brass", "kind": "cover-frame", "name": "Brass", "spec": { "frameId": "brass" } },
+    { "id": "builtin.neuterradise.frame.obsidian", "kind": "cover-frame", "name": "Obsidian", "spec": { "frameId": "obsidian" } },
+    { "id": "builtin.neuterradise.frame.royal", "kind": "cover-frame", "name": "Royal", "spec": { "frameId": "royal" } },
+    { "id": "builtin.neuterradise.frame.floral", "kind": "cover-frame", "name": "Floral", "spec": { "frameId": "floral" } },
+    { "id": "builtin.neuterradise.frame.arcane", "kind": "cover-frame", "name": "Arcane", "performance": { "tier": "prestige", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 1 }, "spec": { "frameId": "arcane" } },
+    { "id": "builtin.neuterradise.frame.celestial", "kind": "cover-frame", "name": "Celestial", "performance": { "tier": "prestige", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 1 }, "spec": { "frameId": "celestial" } },
+    { "id": "builtin.neuterradise.frame.champion", "kind": "cover-frame", "name": "Champion", "spec": { "frameId": "champion" } },
+    { "id": "builtin.neuterradise.frame.mythic", "kind": "cover-frame", "name": "Mythic", "performance": { "tier": "prestige", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 1 }, "spec": { "frameId": "mythic" } },
+    { "id": "builtin.neuterradise.frame.legendary", "kind": "cover-frame", "name": "Legendary", "performance": { "tier": "prestige", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 1 }, "spec": { "frameId": "legendary" } },
+    { "id": "builtin.neuterradise.frame.soft-ring", "kind": "cover-frame", "name": "Soft Ring", "spec": { "frameId": "soft-ring" } },
+    { "id": "builtin.neuterradise.frame.double-ring", "kind": "cover-frame", "name": "Double Ring", "spec": { "frameId": "double-ring" } },
+    { "id": "builtin.neuterradise.frame.cyber", "kind": "cover-frame", "name": "Cyber", "spec": { "frameId": "cyber" } },
+    { "id": "builtin.neuterradise.frame.neon-circuit", "kind": "cover-frame", "name": "Neon Circuit", "performance": { "tier": "prestige", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 1 }, "spec": { "frameId": "neon-circuit" } },
+    { "id": "builtin.neuterradise.frame.holographic", "kind": "cover-frame", "name": "Holographic", "performance": { "tier": "prestige", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 1 }, "spec": { "frameId": "holographic" } },
+    { "id": "builtin.neuterradise.frame.hud", "kind": "cover-frame", "name": "HUD Badge", "spec": { "frameId": "hud" } },
+
+    { "id": "builtin.neuterradise.environment.living-banner", "kind": "profile-environment", "name": "Living Banner", "description": "The Profile Banner fills the environment; its colour tints nearby glass.",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 3 },
+      "spec": { "mediaTint": 0.4, "atmosphere": "fog", "usesBanner": true, "scrimStrength": 0.65, "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:canvas", "offset": 1 } ] },
+          { "kind": "image", "source": "media-banner", "opacity": 1.0, "scale": 1.06, "amplitude": 0.025, "period": 32 },
+          { "kind": "media-tint", "opacity": 0.35 },
+          { "kind": "fog", "color": "token:lightAmbient", "opacity": 0.18, "scale": 1.4, "speed": 0.4, "period": 70 },
+          { "kind": "vignette", "opacity": 0.5 } ] },
+        "reduced": { "layers": [
+          { "kind": "image", "source": "media-banner", "opacity": 1.0, "scale": 1.04 },
+          { "kind": "media-tint", "opacity": 0.3 },
+          { "kind": "vignette", "opacity": 0.45 } ] },
+        "fallback": { "layers": [
+          { "kind": "image", "source": "media-banner", "opacity": 1.0, "scale": 1.0 },
+          { "kind": "vignette", "opacity": 0.4 } ] } } } },
+    { "id": "builtin.neuterradise.environment.ambient-cover", "kind": "profile-environment", "name": "Ambient Cover", "description": "A deep blur of the Cover becomes the room around the identity.",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 2 },
+      "spec": { "mediaTint": 0.5, "atmosphere": "none", "usesBanner": false, "scrimStrength": 0.55, "variants": {
+        "full": { "layers": [
+          { "kind": "gradient", "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:canvas", "offset": 1 } ] },
+          { "kind": "image", "source": "media-cover", "opacity": 0.7, "blur": 44, "scale": 1.35, "amplitude": 0.04, "period": 28 },
+          { "kind": "media-tint", "opacity": 0.45 },
+          { "kind": "noise", "opacity": 0.03 },
+          { "kind": "vignette", "opacity": 0.6 } ] },
+        "reduced": { "layers": [
+          { "kind": "image", "source": "media-cover", "opacity": 0.6, "blur": 44, "scale": 1.3 },
+          { "kind": "media-tint", "opacity": 0.4 },
+          { "kind": "vignette", "opacity": 0.55 } ] },
+        "fallback": { "layers": [
+          { "kind": "gradient", "stops": [ { "color": "token:canvas", "offset": 0 }, { "color": "token:backgroundCinematic", "offset": 1 } ] },
+          { "kind": "media-tint", "opacity": 0.35 },
+          { "kind": "vignette", "opacity": 0.5 } ] } } } },
+    { "id": "builtin.neuterradise.environment.theme", "kind": "profile-environment", "name": "Theme Atmosphere", "description": "The theme's nebula field behind the Profile.",
+      "performance": { "tier": "cinematic", "continuousAnimation": true, "offscreenPolicy": "suspend", "maxAnimatedLayers": 7 },
+      "spec": { "backdrop": "builtin.neuterradise.backdrop.nebula", "mediaTint": 0.2, "atmosphere": "fog", "usesBanner": false, "scrimStrength": 0.6 } },
+    { "id": "builtin.neuterradise.environment.quiet", "kind": "profile-environment", "name": "Quiet", "description": "A still field. The Profile stands alone.",
+      "spec": { "backdrop": "builtin.neuterradise.backdrop.still", "mediaTint": 0.0, "atmosphere": "none", "usesBanner": false, "scrimStrength": 0.5 } },
+
+    { "id": "builtin.neuterradise.tile.immersive", "kind": "media-tile", "name": "Immersive", "description": "Edge-to-edge art with a protected gradient.", "spec": { "legacyVariant": "Immersive", "aspect": 1.0, "fit": "fill", "overlay": "gradient", "showTypeBadge": true, "hover": "lift" } },
+    { "id": "builtin.neuterradise.tile.metadata", "kind": "media-tile", "name": "Metadata", "description": "Portrait art with a glass metadata strip.", "spec": { "legacyVariant": "Metadata", "aspect": 0.8, "fit": "fill", "overlay": "glass-strip", "showTypeBadge": true, "hover": "spotlight" } },
+    { "id": "builtin.neuterradise.tile.clean", "kind": "media-tile", "name": "Clean", "description": "Pure artwork; details appear only on focus.", "spec": { "legacyVariant": "Clean", "aspect": 1.0, "fit": "fill", "overlay": "none", "showTypeBadge": false, "hover": "spotlight" } },
+    { "id": "builtin.neuterradise.tile.compact", "kind": "media-tile", "name": "Compact", "description": "Smaller landscape tiles to see more at once.", "spec": { "legacyVariant": "Compact", "aspect": 1.33, "fit": "fill", "overlay": "none", "showTypeBadge": true, "hover": "none" } },
+
+    { "id": "builtin.neuterradise.border.hairline", "kind": "media-border", "name": "Hairline", "spec": { "style": "hairline", "radius": 10, "thickness": 1, "color": "token:borderSubtle", "selectedColor": "token:borderSelected", "glow": 0 } },
+    { "id": "builtin.neuterradise.border.luminous", "kind": "media-border", "name": "Luminous", "spec": { "style": "luminous", "radius": 12, "thickness": 1.5, "color": "token:glassBorder", "selectedColor": "token:borderEnergy", "glow": 0.6 } },
+    { "id": "builtin.neuterradise.border.frame", "kind": "media-border", "name": "Gallery Frame", "spec": { "style": "frame", "radius": 4, "thickness": 4, "color": "token:surface3", "selectedColor": "token:accent", "glow": 0 } },
+    { "id": "builtin.neuterradise.border.none", "kind": "media-border", "name": "Borderless", "spec": { "style": "none", "radius": 8, "thickness": 0, "color": "#00000000", "selectedColor": "token:borderSelected", "glow": 0 } },
+
+    { "id": "builtin.neuterradise.info.overlay", "kind": "media-info-layout", "name": "Overlay", "spec": { "placement": "overlay-bottom", "fields": ["name", "type", "duration"], "lines": 1 } },
+    { "id": "builtin.neuterradise.info.below", "kind": "media-info-layout", "name": "Below", "spec": { "placement": "below", "fields": ["name", "dimensions", "duration", "added"], "lines": 2 } },
+    { "id": "builtin.neuterradise.info.hover", "kind": "media-info-layout", "name": "On Hover", "spec": { "placement": "hover", "fields": ["name", "type", "duration", "favorite"], "lines": 1 } },
+    { "id": "builtin.neuterradise.info.hidden", "kind": "media-info-layout", "name": "Artwork Only", "spec": { "placement": "hidden", "fields": [], "lines": 0 } }
+  ]
+}

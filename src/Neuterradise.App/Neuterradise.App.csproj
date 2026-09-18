@@ -1,0 +1,57 @@
+<Project Sdk="Uno.Sdk">
+  <!--
+    NeuTerradise product executable: C# / .NET 10, Uno Platform 6.6 (stable), Skia Desktop renderer,
+    net10.0-desktop, Win32 host. The runtime (domain, persistence, Vault, jobs, ResourceGovernor and the
+    Presentation Contract) lives in Neuterradise.Runtime and never references a UI framework.
+    Vulkan is not forced: the default supported Skia backend is the correctness baseline.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-desktop</TargetFrameworks>
+    <OutputType>WinExe</OutputType>
+    <UnoSingleProject>true</UnoSingleProject>
+    <AssemblyName>NeuTerradise</AssemblyName>
+    <RootNamespace>Neuterradise.App</RootNamespace>
+    <ApplicationTitle>Neu Terradise</ApplicationTitle>
+    <ApplicationId>com.neuterradise.app</ApplicationId>
+    <ApplicationDisplayVersion>$(ProductVersion)</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationPublisher>Neu Terradise</ApplicationPublisher>
+    <Description>Neu Terradise — a living cinematic collection desktop.</Description>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UnoFeatures>
+      SkiaRenderer;
+      MediaPlayerElement;
+      Lottie;
+    </UnoFeatures>
+    <NoWarn>$(NoWarn);NU1507;NETSDK1201;PRI257;Uno0001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Neuterradise.Runtime\Neuterradise.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Built-in Presentation Pack assets ship with the application payload (never the Vault). -->
+    <Content Update="Assets\Presentation\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    The product runs only on the Win32 Skia host (Program.cs: UseWin32). Uno's desktop project system also
+    adds the Skia-on-WPF host package unconditionally, which would drag the WPF framework into the payload.
+    Remove it from the resolver's input before UnoImplicitPackages turns implicit references into real
+    PackageReferences (that target runs before restore's CollectPackageReferences), so no WPF host,
+    framework reference or WPF runtime switch reaches restore, the build or the self-contained publish.
+  -->
+  <Target Name="NeuterradiseExcludeWpfHost" BeforeTargets="UnoImplicitPackages">
+    <ItemGroup>
+      <_UnoProjectSystemPackageReference Remove="Uno.WinUI.Runtime.Skia.Wpf" />
+      <_UnoProjectSystemPackageReference Remove="Uno.Resizetizer" />
+      <PackageReference Remove="Uno.WinUI.Runtime.Skia.Wpf" />
+      <PackageReference Remove="Uno.Resizetizer" />
+      <RuntimeHostConfigurationOption Remove="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" />
+    </ItemGroup>
+  </Target>
+</Project>

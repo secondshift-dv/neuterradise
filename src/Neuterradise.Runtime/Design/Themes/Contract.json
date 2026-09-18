@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "contract",
+  "name": "Contract",
+  "isDark": false,
+  "colors": {
+    "canvas": "#FFEFF1F4",
+    "surface1": "#FFFFFFFF",
+    "surface2": "#FFF4F6F8",
+    "surface3": "#FFE7EBEF",
+    "surfaceElevated": "#FFFFFFFF",
+    "surfaceOverlay": "#F2FFFFFF",
+    "surfaceHover": "#FFEFF3F6",
+    "surfacePressed": "#FFE0E6EB",
+    "surfaceSelected": "#FFDCE8F0",
+    "textPrimary": "#FF192431",
+    "textSecondary": "#FF40505D",
+    "textMuted": "#FF667784",
+    "textDisabled": "#FFA0ACB5",
+    "textInverse": "#FFFFFFFF",
+    "textOnAccent": "#FFFFFFFF",
+    "textLink": "#FF28557C",
+    "borderSubtle": "#33192431",
+    "borderDefault": "#662D4356",
+    "borderStrong": "#99506A7B",
+    "borderInteractive": "#AA28557C",
+    "borderSelected": "#FF28557C",
+    "focus": "#FF28557C",
+    "accent": "#FF28557C",
+    "accentHover": "#FF356D9B",
+    "accentPressed": "#FF1E4667",
+    "accentSecondary": "#FF4C6255",
+    "selection": "#664C8AA8",
+    "selectionHover": "#884C8AA8",
+    "info": "#FF28557C",
+    "success": "#FF367A53",
+    "warning": "#FF9B6B20",
+    "danger": "#FFB33A3A",
+    "dangerHover": "#FFCE5757"
+  },
+  "typography": {
+    "displayFamily": "Segoe UI Variable Display",
+    "headingFamily": "Segoe UI Variable Display",
+    "bodyFamily": "Segoe UI Variable Text",
+    "monoFamily": "Cascadia Mono"
+  },
+  "shape": {
+    "xs": 2,
+    "sm": 6,
+    "md": 10,
+    "lg": 16,
+    "xl": 24
+  },
+  "motion": {
+    "fastMs": 120,
+    "normalMs": 220,
+    "slowMs": 360,
+    "cinematicMs": 650
+  },
+  "background": {
+    "kind": "RadialGlow"
+  },
+  "morphology": {
+    "navigationTreatment": "StrongBorder",
+    "cardPersonality": "Framed",
+    "chromeTreatment": "Flush",
+    "focusTreatment": "Ring",
+    "borderWeight": 2.0,
+    "elevationStrength": 0.0,
+    "glowStrength": 0.0,
+    "panelOpacity": 1.0,
+    "motionIntensity": 0.6,
+    "navigationRadiusScale": 0.2
+  }
+}

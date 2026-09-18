@@ -1,0 +1,71 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_mode:
+        description: What to do after the verified build
+        required: true
+        default: draft
+        type: choice
+        options:
+          - artifact-only
+          - draft
+          - publish
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}\.cache\nuget
+      NEUTERRADISE_BUILD_CACHE: ${{ github.workspace }}\.cache\neuterradise-downloads
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore dependency caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.NUGET_PACKAGES }}
+            ${{ env.NEUTERRADISE_BUILD_CACHE }}
+          key: neuterradise-windows-${{ hashFiles('global.json', 'Directory.Build.props', '**/*.csproj', 'scripts/package-win-x64.ps1') }}
+          restore-keys: |
+            neuterradise-windows-
+
+      - name: Canonical build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Upload verified build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuTerradise-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Create or refresh Draft Release
+        if: ${{ inputs.release_mode == 'draft' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/release.ps1 -NoBuild
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.release_mode == 'publish' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/release.ps1 -NoBuild -Publish

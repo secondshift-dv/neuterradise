@@ -1,0 +1,40 @@
+# NeuTerradise generated/build artifacts
+
+# .NET build outputs
+**/bin/
+**/obj/
+
+# IDE state
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Generated build/package/cache output (fully disposable, never tracked)
+dist/
+.cache/
+publish/
+out/
+
+# Logs/temp/backups
+*.log
+*.tmp
+*.temp
+*.bak
+
+# OS metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# NuGet generated/local packages
+packages/
+*.nupkg
+*.snupkg
+
+# Local visual/design working output
+design-reference/
+visual-captures/

@@ -1,0 +1,241 @@
+using Neuterradise.App.SystemServices.Database;
+using Neuterradise.App.SystemServices.Database.Reads;
+using Neuterradise.App.SystemServices.Database.Writes;
+using Neuterradise.App.SystemServices.Jobs;
+using Neuterradise.App.Trash;
+
+namespace Neuterradise.App.Import;
+
+/// <summary>
+/// Single authority for per-import-unit lifecycle controls: Pause, Start/Resume, Prioritize,
+/// Cancel. Every user control action routes through here so that UI, scheduler, recovery, and
+/// commit coordinator never independently own import lifecycle transitions.
+///
+/// The full control path is:
+/// <code>
+/// UI command → ImportUnitControlAuthority → durable import state → scheduler jobs
+///   → running handler cancellation → Stage 1/2 checkpoint state → recovery → UI read model
+/// </code>
+///
+/// Import membership is resolved through import_items → candidate_asset_id → jobs.owner_id
+/// (Asset-owned jobs). Never uses global scheduler pause for an individual import.
+/// </summary>
+public sealed class ImportUnitControlAuthority
+{
+    private readonly CatalogDb _catalog;
+    private readonly ImportUnitWrites _unitWrites;
+    private readonly ImportPriorityOperations _priority;
+    private readonly ImportFinalizer? _finalizer;
+    private readonly JobCancellationOperations _jobCancellation;
+    private readonly SchedulerReads _schedulerReads;
+    private readonly ImportCancellationSettlement _settlement;
+
+    /// <summary>Maximum time to wait for running jobs to leave RUNNING state during Cancel.</summary>
+    private static readonly TimeSpan CancelSettleTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CancelSettlePoll = TimeSpan.FromMilliseconds(250);
+
+    public ImportUnitControlAuthority(
+        CatalogDb catalog,
+        ImportFinalizer? finalizer = null,
+        TimeProvider? timeProvider = null,
+        JobCancellationOperations? jobCancellation = null,
+        TrashCoordinator? trashCoordinator = null)
+    {
+        _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _unitWrites = new ImportUnitWrites(catalog, timeProvider);
+        _priority = new ImportPriorityOperations(catalog);
+        _finalizer = finalizer;
+        _jobCancellation = jobCancellation ?? new JobCancellationOperations(catalog);
+        _schedulerReads = new SchedulerReads(catalog);
+        _settlement = new ImportCancellationSettlement(catalog, trashCoordinator, timeProvider);
+    }
+
+    /// <summary>
+    /// Pauses one import: persists the durable paused flag, transitions idle jobs to PAUSED,
+    /// and signals currently running jobs to stop at a safe boundary. Running handlers exit
+    /// through their cancellation token and settle as PAUSED (not failed, not cancelled).
+    ///
+    /// Preserves all completed work, checkpoints, and canonical authority. Idempotent.
+    /// </summary>
+    public async Task<bool> PauseAsync(Guid unitId, CancellationToken cancellationToken = default)
+    {
+        if (unitId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var paused = await _unitWrites.SetPausedAsync(unitId, paused: true, cancellationToken)
+            .ConfigureAwait(false);
+        if (!paused)
+        {
+            return false;
+        }
+
+        await _priority.ClearIfFocusedAsync(unitId, cancellationToken).ConfigureAwait(false);
+
+        await SignalRunningJobsAsync(unitId, JobControlIntent.Pause, cancellationToken)
+            .ConfigureAwait(false);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Starts or resumes one import. Unsets the durable paused flag, makes this import the focused
+    /// import (P1/90), demotes the previous focused import to P3/50, and wakes the finalizer so
+    /// eligible work begins immediately.
+    ///
+    /// Resume uses persisted state — does not recreate the import graph, does not repeat completed
+    /// Stage 1 or Stage 2 work.
+    /// </summary>
+    public async Task<bool> StartAsync(Guid unitId, CancellationToken cancellationToken = default)
+    {
+        if (unitId == Guid.Empty)
+        {
+            return false;
+        }
+
+        await _unitWrites.ResumeUnitAsync(unitId, cancellationToken).ConfigureAwait(false);
+        await _priority.FocusAsync(unitId, cancellationToken).ConfigureAwait(false);
+        _finalizer?.Wake(unitId);
+        return true;
+    }
+
+    /// <summary>
+    /// Makes a running but non-focused import the focused import. Reuses Task E P1=90 authority.
+    /// Previous focus falls to P3=50. Repeated Prioritize on the already-focused import is idempotent.
+    /// </summary>
+    public async Task PrioritizeAsync(Guid unitId, CancellationToken cancellationToken = default)
+    {
+        if (unitId == Guid.Empty)
+        {
+            return;
+        }
+
+        await _priority.FocusAsync(unitId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Cancels one unpublished import. Cancellation is persisted first so no new import work may
+    /// become eligible. Running handlers then receive the shared scheduler CTS and must leave RUNNING
+    /// before canonical storage rollback is allowed. A safe-boundary timeout leaves rollback pending;
+    /// it never authorizes destructive rollback while a handler may still be using the asset.
+    /// </summary>
+    public async Task<ImportCancellationOutcome> CancelAsync(
+        Guid unitId,
+        CancellationToken cancellationToken = default)
+    {
+        if (unitId == Guid.Empty)
+        {
+            return new ImportCancellationOutcome(unitId, ImportCancellationResult.UnitNotFound);
+        }
+
+        // Persist CANCELLED first. This cancels idle work and makes the durable lifecycle authority
+        // block future import scheduling before we wait for running handlers.
+        var outcome = await _unitWrites.CancelUnitAsync(unitId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!outcome.WasCancelled || outcome.Result == ImportCancellationResult.AlreadyCancelled)
+        {
+            return outcome;
+        }
+
+        await _priority.ClearIfFocusedAsync(unitId, cancellationToken).ConfigureAwait(false);
+
+        // Running jobs share the scheduler's JobCancellationOperations instance in production.
+        await SignalRunningJobsAsync(unitId, JobControlIntent.Cancel, cancellationToken)
+            .ConfigureAwait(false);
+
+        var runningSettlement = await WaitForRunningJobsToSettleAsync(unitId, cancellationToken)
+            .ConfigureAwait(false);
+        if (runningSettlement != RunningJobSettlement.Settled)
+        {
+            return outcome with { Result = ImportCancellationResult.RollbackPending };
+        }
+
+        // Settlement reconstructs every remaining step from durable catalog/Trash/commit authority.
+        // The original in-memory outcome is deliberately not used to decide what rollback remains.
+        var settlement = await _settlement.TrySettleAsync(unitId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return settlement.Status switch
+        {
+            ImportCancellationSettlementStatus.Settled =>
+                outcome with { Result = ImportCancellationResult.Cancelled },
+
+            ImportCancellationSettlementStatus.NotRequired
+                when outcome.Result == ImportCancellationResult.RollbackPending =>
+                outcome with { Result = ImportCancellationResult.AlreadyCancelled },
+
+            ImportCancellationSettlementStatus.NotRequired =>
+                outcome with { Result = ImportCancellationResult.Cancelled },
+
+            ImportCancellationSettlementStatus.Missing =>
+                new ImportCancellationOutcome(unitId, ImportCancellationResult.UnitNotFound),
+
+            _ => outcome with { Result = ImportCancellationResult.RollbackPending },
+        };
+    }
+
+    /// <summary>
+    /// Waits for all currently RUNNING jobs belonging to one ImportUnit to leave RUNNING.
+    /// Caller cancellation propagates. The internal timeout is an explicit non-success result and
+    /// therefore cannot accidentally authorize Trash/profile mutation.
+    /// </summary>
+    private async Task<RunningJobSettlement> WaitForRunningJobsToSettleAsync(
+        Guid unitId,
+        CancellationToken cancellationToken)
+    {
+        using var timeout = new CancellationTokenSource(CancelSettleTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+
+        try
+        {
+            while (true)
+            {
+                var runningCount = await _schedulerReads
+                    .CountRunningJobsForImportUnitAsync(unitId, linked.Token)
+                    .ConfigureAwait(false);
+
+                if (runningCount == 0)
+                {
+                    return RunningJobSettlement.Settled;
+                }
+
+                await Task.Delay(CancelSettlePoll, linked.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (
+            timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return RunningJobSettlement.TimedOut;
+        }
+    }
+
+    /// <summary>
+    /// Resolves all currently RUNNING jobs belonging to one ImportUnit and signals them to stop
+    /// at a safe boundary using the given control intent. Import membership is resolved through
+    /// import_items → candidate_asset_id → jobs.owner_id (Asset-owned jobs).
+    /// </summary>
+    private async Task SignalRunningJobsAsync(
+        Guid unitId,
+        JobControlIntent intent,
+        CancellationToken cancellationToken)
+    {
+        var runningJobIds = await _schedulerReads
+            .GetRunningJobIdsForImportUnitAsync(unitId, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var jobId in runningJobIds)
+        {
+            _jobCancellation.SetIntent(jobId, intent);
+            await _jobCancellation.RequestCancelAsync(jobId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private enum RunningJobSettlement
+    {
+        Settled,
+        TimedOut,
+    }
+}

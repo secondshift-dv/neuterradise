@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "abyss",
+  "name": "Abyss",
+  "isDark": true,
+  "colors": {
+    "canvas": "#FF0D0B14",
+    "surface1": "#FF15121F",
+    "surface2": "#FF1D182A",
+    "surface3": "#FF262033",
+    "surfaceElevated": "#FF2D2640",
+    "surfaceOverlay": "#F2262033",
+    "surfaceHover": "#FF332A49",
+    "surfacePressed": "#FF3A3052",
+    "surfaceSelected": "#FF43315F",
+    "textPrimary": "#FFF7F3FF",
+    "textSecondary": "#FFD3C9E3",
+    "textMuted": "#FFA79BB8",
+    "textDisabled": "#FF6E657A",
+    "textInverse": "#FF15121F",
+    "textOnAccent": "#FFFFFFFF",
+    "textLink": "#FFC7A6FF",
+    "borderSubtle": "#332E2740",
+    "borderDefault": "#663B3150",
+    "borderStrong": "#9953476A",
+    "borderInteractive": "#AA7259A2",
+    "borderSelected": "#FF9D6CFF",
+    "focus": "#FFD7BCFF",
+    "accent": "#FF6D28D9",
+    "accentHover": "#FF7C3AED",
+    "accentPressed": "#FF5B21B6",
+    "accentSecondary": "#FF553C82",
+    "selection": "#665E39A1",
+    "selectionHover": "#885E39A1",
+    "info": "#FF61A8FF",
+    "success": "#FF5DD39E",
+    "warning": "#FFFFC857",
+    "danger": "#FFFF6B81",
+    "dangerHover": "#FFFF8798"
+  },
+  "typography": {
+    "displayFamily": "Segoe UI Variable Display",
+    "headingFamily": "Segoe UI Variable Display",
+    "bodyFamily": "Segoe UI Variable Text",
+    "monoFamily": "Cascadia Mono"
+  },
+  "shape": {
+    "xs": 2,
+    "sm": 6,
+    "md": 10,
+    "lg": 16,
+    "xl": 24
+  },
+  "motion": {
+    "fastMs": 120,
+    "normalMs": 220,
+    "slowMs": 360,
+    "cinematicMs": 650
+  },
+  "background": {
+    "kind": "RadialGlow"
+  },
+  "morphology": {
+    "navigationTreatment": "Glow",
+    "cardPersonality": "Raised",
+    "chromeTreatment": "Elevated",
+    "focusTreatment": "Glow",
+    "borderWeight": 1.0,
+    "elevationStrength": 1.35,
+    "glowStrength": 1.2,
+    "panelOpacity": 0.97,
+    "motionIntensity": 1.0,
+    "navigationRadiusScale": 1.0
+  }
+}
