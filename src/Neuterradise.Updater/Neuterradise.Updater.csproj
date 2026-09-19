@@ -9,4 +9,7 @@
     <AssemblyName>NeuTerradise.Updater</AssemblyName>
     <RootNamespace>Neuterradise.Updater</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\\Neuterradise.Release.Contracts\\Neuterradise.Release.Contracts.csproj" />
+  </ItemGroup>
 </Project>

@@ -105,21 +105,13 @@ public sealed class UpdatePackageStager
                         writtenFiles);
                 }
 
-                var destination = RootPathRules.ResolveContainedPath(
-                    staging,
-                    staging,
-                    normalized,
-                    nameof(operationId));
+                var destination = ResolveArchiveDestination(staging, normalized, operationId);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
 
-                // Re-resolve immediately before file mutation so a reparse point introduced
-                // after parent creation cannot redirect extraction outside this operation root.
-                destination = RootPathRules.ResolveContainedPath(
-                    staging,
-                    staging,
-                    normalized,
-                    nameof(operationId));
+                // Repeat the explicit canonical containment proof immediately before mutation,
+                // after parent creation, then apply the shared reparse-aware authority as well.
+                destination = ResolveArchiveDestination(staging, normalized, operationId);
 
                 await using var input = entry.Open();
                 await using var output = new FileStream(
@@ -167,6 +159,43 @@ public sealed class UpdatePackageStager
             CleanupWrittenFiles(writtenFiles);
             return UpdatePackageValidationResult.Reject($"Update archive staging access was denied: {ex.Message}");
         }
+    }
+
+    private static string ResolveArchiveDestination(string stagingRoot, string normalizedEntryName, Guid operationId)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedEntryName)
+            || Path.IsPathRooted(normalizedEntryName)
+            || normalizedEntryName.StartsWith('/', StringComparison.Ordinal)
+            || normalizedEntryName.Contains(':', StringComparison.Ordinal)
+            || normalizedEntryName.Contains('\0'))
+        {
+            throw new ArgumentException("Update archive entry is not a safe relative path.", nameof(normalizedEntryName));
+        }
+
+        var segments = normalizedEntryName.Split('/', StringSplitOptions.None);
+        if (segments.Any(segment =>
+                string.IsNullOrWhiteSpace(segment)
+                || segment is "." or ".."))
+        {
+            throw new ArgumentException("Update archive entry contains an unsafe path segment.", nameof(normalizedEntryName));
+        }
+
+        var canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(stagingRoot));
+        var platformRelative = string.Join(Path.DirectorySeparatorChar.ToString(), segments);
+        var candidate = Path.GetFullPath(Path.Combine(canonicalRoot, platformRelative));
+        var rootPrefix = canonicalRoot + Path.DirectorySeparatorChar;
+        if (!candidate.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Update archive entry escapes the operation staging root.", nameof(normalizedEntryName));
+
+        var sharedAuthority = RootPathRules.ResolveContainedPath(
+            canonicalRoot,
+            canonicalRoot,
+            normalizedEntryName,
+            nameof(operationId));
+        if (!string.Equals(candidate, sharedAuthority, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Update archive containment authorities disagree.");
+
+        return candidate;
     }
 
     private static UpdatePackageValidationResult RejectAndCleanup(

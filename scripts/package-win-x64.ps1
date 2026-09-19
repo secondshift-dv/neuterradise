@@ -30,6 +30,19 @@ $ProductVersion = [string]$BuildPropertyGroup.ProductVersion
 $RuntimeIdentifier = [string]$BuildPropertyGroup.ProductRuntimeIdentifier
 $ZipName = "NeuTerradise-v$ProductVersion-$RuntimeIdentifier.zip"
 
+$ReleaseContractSourcePath = Join-Path $RepositoryRoot 'release-contract.json'
+if (-not (Test-Path -LiteralPath $ReleaseContractSourcePath -PathType Leaf)) { throw "release-contract.json is required." }
+$ReleaseContract = Get-Content -LiteralPath $ReleaseContractSourcePath -Raw | ConvertFrom-Json
+if ($ReleaseContract.schemaVersion -ne 1 -or
+    $ReleaseContract.productId -ne $ProductId -or
+    $ReleaseContract.runtimeIdentifier -ne $RuntimeIdentifier) {
+    throw "release-contract.json identity is invalid."
+}
+$ModelsRelativeRoot = ([string]$ReleaseContract.modelsRelativeRoot).Replace('\', '/').Trim('/')
+$RequiredReleaseMembers = @($ReleaseContract.requiredMembers | ForEach-Object { ([string]$_).Replace('\', '/') })
+$RequiredUniqueFileNames = @($ReleaseContract.requiredUniqueFileNames | ForEach-Object { [string]$_ })
+$FfmpegMirrorUrl = [string]$ReleaseContract.ffmpegMirrorUrl
+
 $AppExe = 'NeuTerradise.exe'
 $WorkerExe = 'NeuTerradise.Profiling.Worker.exe'
 $UpdaterExe = 'NeuTerradise.Updater.exe'
@@ -466,13 +479,9 @@ finally {
     Pop-Location
 }
 
-foreach ($requiredRelativePath in @($AppRelativePath, $WorkerRelativePath, $UpdaterRelativePath)) {
-    Assert-RequiredFile -Root $InstallRoot -RelativePath $requiredRelativePath
-}
-
 $WorkerInstallRoot = Join-Path $InstallRoot 'workers'
-$YuNetRelativePath = "workers/models/yunet/$YuNetFileName"
-$SFaceRelativePath = "workers/models/sface/$SFaceFileName"
+$YuNetRelativePath = "$ModelsRelativeRoot/yunet/$YuNetFileName"
+$SFaceRelativePath = "$ModelsRelativeRoot/sface/$SFaceFileName"
 $YuNetPath = Join-Path $InstallRoot $YuNetRelativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)
 $SFacePath = Join-Path $InstallRoot $SFaceRelativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)
 
@@ -490,8 +499,19 @@ Invoke-Download -Uri $BtbnLicenseUrl -OutFile (Join-Path $LicensesRoot 'BtbN-FFm
 Invoke-Download -Uri $OpenCvSharpLicenseUrl -OutFile (Join-Path $LicensesRoot 'OpenCvSharp-Apache-2.0.txt')
 
 $FfmpegArchivePath = Join-Path $DownloadRoot $FfmpegArchiveName
-Invoke-Download -Uri $FfmpegArchiveUrl -OutFile $FfmpegArchivePath
+$ffmpegDownloadedFromMirror = $false
+try {
+    Invoke-Download -Uri $FfmpegMirrorUrl -OutFile $FfmpegArchivePath
+    Assert-Sha256 -Path $FfmpegArchivePath -Expected $FfmpegArchiveSha256 -Label 'mirrored BtbN FFmpeg archive'
+    $ffmpegDownloadedFromMirror = $true
+}
+catch {
+    if ($Offline) { throw }
+    Write-Host 'FFMPEG_MIRROR_UNAVAILABLE=YES'
+    Invoke-Download -Uri $FfmpegArchiveUrl -OutFile $FfmpegArchivePath
+}
 Assert-Sha256 -Path $FfmpegArchivePath -Expected $FfmpegArchiveSha256 -Label 'BtbN FFmpeg archive'
+Write-Host "FFMPEG_SOURCE=$(if ($ffmpegDownloadedFromMirror) { 'PROJECT_MIRROR' } else { 'UPSTREAM_FALLBACK' })"
 
 $FfmpegExtractRoot = Join-Path $ExtractRoot 'ffmpeg'
 Expand-Archive -LiteralPath $FfmpegArchivePath -DestinationPath $FfmpegExtractRoot -Force
@@ -520,7 +540,13 @@ if ($LASTEXITCODE -ne 0 -or $ffprobeVersionLine -notmatch '7ba069f4f1') {
 $FfmpegSourceEntry = Normalize-RelativePath -Path ([IO.Path]::GetRelativePath($FfmpegExtractRoot, $FfmpegCandidates[0].FullName))
 $FfprobeSourceEntry = Normalize-RelativePath -Path ([IO.Path]::GetRelativePath($FfmpegExtractRoot, $FfprobeCandidates[0].FullName))
 
-$OpenCvPackageRoot = Join-Path $env:USERPROFILE ".nuget/packages/$($OpenCvSharpPackage.ToLowerInvariant())/$OpenCvSharpVersion"
+$NuGetPackagesRoot = if (-not [string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) {
+    [IO.Path]::GetFullPath($env:NUGET_PACKAGES)
+}
+else {
+    Join-Path $env:USERPROFILE '.nuget\packages'
+}
+$OpenCvPackageRoot = Join-Path $NuGetPackagesRoot "$($OpenCvSharpPackage.ToLowerInvariant())/$OpenCvSharpVersion"
 if (-not (Test-Path -LiteralPath $OpenCvPackageRoot -PathType Container)) {
     throw "Restored NuGet package was not found: $OpenCvPackageRoot"
 }
@@ -584,6 +610,8 @@ The deployment/artifacts.json manifest is the machine-readable authority for the
 
 $DeploymentDirectory = Join-Path $InstallRoot 'deployment'
 New-Item -ItemType Directory -Path $DeploymentDirectory -Force | Out-Null
+$ReleaseContractInstallPath = Join-Path $DeploymentDirectory 'release-contract.json'
+Copy-Item -LiteralPath $ReleaseContractSourcePath -Destination $ReleaseContractInstallPath -Force
 $DeploymentManifestPath = Join-Path $DeploymentDirectory 'artifacts.json'
 
 $deploymentManifest = [ordered]@{
@@ -741,6 +769,16 @@ foreach ($artifact in $parsedDeployment.artifacts) {
     Assert-Sha256 -Path $artifactPath -Expected ([string]$artifact.sha256) -Label ([string]$artifact.logicalName)
 }
 
+foreach ($requiredRelativePath in $RequiredReleaseMembers) {
+    Assert-RequiredFile -Root $InstallRoot -RelativePath $requiredRelativePath
+}
+foreach ($requiredFileName in $RequiredUniqueFileNames) {
+    $matches = @(Get-ChildItem -LiteralPath $InstallRoot -File -Recurse -Filter $requiredFileName)
+    if ($matches.Count -ne 1) {
+        throw "Expected exactly one required runtime member named '$requiredFileName'; got $($matches.Count)."
+    }
+}
+
 $ReleaseManifestPath = Join-Path $InstallRoot 'release-manifest.json'
 $releaseFiles = @(
     Get-ChildItem -LiteralPath $InstallRoot -File -Recurse |
@@ -799,9 +837,17 @@ foreach ($entry in $parsedRelease.files) {
     Assert-Sha256 -Path $path -Expected ([string]$entry.sha256) -Label "release member $relative"
 }
 
-foreach ($requiredRelativePath in @($AppRelativePath, $WorkerRelativePath, $UpdaterRelativePath)) {
+foreach ($requiredRelativePath in $RequiredReleaseMembers) {
     if (-not $manifestPaths.Contains($requiredRelativePath)) {
-        throw "Release manifest is missing required executable membership: $requiredRelativePath"
+        throw "Release manifest is missing required membership: $requiredRelativePath"
+    }
+}
+foreach ($requiredFileName in $RequiredUniqueFileNames) {
+    $count = @($parsedRelease.files | Where-Object {
+        [string]::Equals([IO.Path]::GetFileName([string]$_.relativePath), $requiredFileName, [StringComparison]::OrdinalIgnoreCase)
+    }).Count
+    if ($count -ne 1) {
+        throw "Release manifest must contain exactly one required runtime member named '$requiredFileName'."
     }
 }
 

@@ -10,6 +10,7 @@ $ProgressPreference = 'SilentlyContinue'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $SolutionPath = Join-Path $RepositoryRoot 'NeuTerradise.sln'
 $BuildPropsPath = Join-Path $RepositoryRoot 'Directory.Build.props'
+$ReleaseContractPath = Join-Path $RepositoryRoot 'release-contract.json'
 $PackageScript = Join-Path $PSScriptRoot 'package-win-x64.ps1'
 $DistRoot = Join-Path $RepositoryRoot 'dist'
 $StageRoot = Join-Path ([IO.Path]::GetTempPath()) ('neuterradise-package-' + [Guid]::NewGuid().ToString('N'))
@@ -53,9 +54,9 @@ try {
         $env:NUGET_CERT_REVOCATION_MODE = 'offline'
     }
 
-    $sdks = @(dotnet --list-sdks)
-    if ($LASTEXITCODE -ne 0 -or -not ($sdks | Where-Object { $_ -match '^10\.' })) {
-        throw 'A .NET 10 SDK is required. Automatic SDK installation is not part of the build script.'
+    $sdkVersion = (& dotnet --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not [string]::Equals($sdkVersion, '10.0.401', [StringComparison]::Ordinal)) {
+        throw "Canonical build requires exact .NET SDK 10.0.401; resolved '$sdkVersion'."
     }
 
     [xml]$buildProps = Get-Content -LiteralPath $BuildPropsPath -Raw
@@ -65,6 +66,14 @@ try {
     $productVersion = [string]$identity.ProductVersion
     $runtimeIdentifier = [string]$identity.ProductRuntimeIdentifier
     $zipName = "NeuTerradise-v$productVersion-$runtimeIdentifier.zip"
+
+    if (-not (Test-Path -LiteralPath $ReleaseContractPath -PathType Leaf)) { throw 'release-contract.json is required.' }
+    $releaseContract = Get-Content -LiteralPath $ReleaseContractPath -Raw | ConvertFrom-Json
+    if ($releaseContract.schemaVersion -ne 1 -or
+        $releaseContract.productId -ne 'neuterradise' -or
+        $releaseContract.runtimeIdentifier -ne $runtimeIdentifier) {
+        throw 'release-contract.json identity is invalid.'
+    }
 
     Write-Host "SOURCE_HEAD=$head"
     Write-Host "PRODUCT_VERSION=$productVersion"
@@ -96,16 +105,20 @@ try {
     $verifiedBuild = Join-Path $StageRoot 'install-root'
     $verifiedZip = Join-Path $StageRoot $zipName
     $verifiedUpdateManifest = Join-Path $StageRoot 'update.json'
-    foreach ($required in @(
-        $verifiedBuild,
-        $verifiedZip,
-        $verifiedUpdateManifest,
-        (Join-Path $verifiedBuild 'NeuTerradise.exe'),
-        (Join-Path $verifiedBuild 'NeuTerradise.Updater.exe'),
-        (Join-Path $verifiedBuild 'workers\NeuTerradise.Profiling.Worker.exe'),
-        (Join-Path $verifiedBuild 'release-manifest.json'),
-        (Join-Path $verifiedBuild 'deployment\artifacts.json'))) {
+    foreach ($required in @($verifiedBuild, $verifiedZip, $verifiedUpdateManifest, (Join-Path $verifiedBuild 'release-manifest.json'))) {
         if (-not (Test-Path -LiteralPath $required)) { throw "Verified build output is incomplete: $required" }
+    }
+    foreach ($relative in @($releaseContract.requiredMembers)) {
+        $required = Join-Path $verifiedBuild ([string]$relative).Replace('/', [IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+            throw "Verified build output is missing canonical required member: $relative"
+        }
+    }
+    foreach ($requiredFileName in @($releaseContract.requiredUniqueFileNames)) {
+        $matches = @(Get-ChildItem -LiteralPath $verifiedBuild -File -Recurse -Filter ([string]$requiredFileName))
+        if ($matches.Count -ne 1) {
+            throw "Verified build output must contain exactly one required runtime member named '$requiredFileName'."
+        }
     }
 
     if (Test-Path -LiteralPath $DistRoot) { Remove-Item -LiteralPath $DistRoot -Recurse -Force }
@@ -118,9 +131,23 @@ try {
     $distZip = Join-Path $DistRoot $zipName
     $distManifest = Join-Path $DistRoot 'update.json'
     $provenancePath = Join-Path $DistRoot 'build-provenance.json'
+    $dependencyAuthorityFiles = @(
+        (Join-Path $RepositoryRoot 'global.json'),
+        (Join-Path $RepositoryRoot 'Directory.Build.props'),
+        $ReleaseContractPath
+    ) + @(Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot 'src') -File -Recurse -Filter '*.csproj' | ForEach-Object { $_.FullName })
+    $dependencyAuthorityLines = @($dependencyAuthorityFiles | Sort-Object | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($RepositoryRoot, $_).Replace('\', '/')
+        $sha = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$relative=$sha"
+    })
+    $dependencyAuthorityBytes = [Text.Encoding]::UTF8.GetBytes(($dependencyAuthorityLines -join "`n"))
+    $dependencyAuthoritySha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($dependencyAuthorityBytes)).ToLowerInvariant()
     $provenance = [ordered]@{
         schemaVersion = 1
         sourceHead = $head
+        dotnetSdkVersion = $sdkVersion
+        dependencyDeclarationSha256 = $dependencyAuthoritySha256
         productVersion = $productVersion
         runtimeIdentifier = $runtimeIdentifier
         zipFileName = $zipName

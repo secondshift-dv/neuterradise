@@ -80,8 +80,41 @@ public sealed class UpdateTrustPolicy
 
         if (!string.Equals(manifest.RuntimeIdentifier, ProductIdentity.RuntimeId, StringComparison.OrdinalIgnoreCase))
             return UpdateTrustDecision.Reject("Update runtime is incompatible.");
-        if (!IsNewerVersion(manifest.ProductVersion, ProductIdentity.Version))
+
+        Version candidateVersion;
+        Version installedVersion;
+        try
+        {
+            candidateVersion = UpdateManifest.ParseStrictVersion(manifest.ProductVersion, "Update product version");
+            installedVersion = UpdateManifest.ParseStrictVersion(ProductIdentity.Version, "Installed product version");
+        }
+        catch (FormatException exception)
+        {
+            return UpdateTrustDecision.Reject(exception.Message);
+        }
+
+        if (candidateVersion <= installedVersion)
             return UpdateTrustDecision.Reject("Update version is not newer than the installed product.");
+
+        if (manifest.MinimumCompatibleVersion is { } minimumCompatibleVersion)
+        {
+            Version minimum;
+            try
+            {
+                minimum = UpdateManifest.ParseStrictVersion(minimumCompatibleVersion, "Minimum compatible version");
+            }
+            catch (FormatException exception)
+            {
+                return UpdateTrustDecision.Reject(exception.Message);
+            }
+
+            if (installedVersion < minimum)
+                return UpdateTrustDecision.Reject("Installed product is older than the update's minimum compatible version.");
+        }
+        else if (candidateVersion.Major > installedVersion.Major)
+        {
+            return UpdateTrustDecision.Reject("A cross-major update must declare minimumCompatibleVersion explicitly.");
+        }
 
         if (isLocalPackage)
         {
@@ -105,8 +138,4 @@ public sealed class UpdateTrustPolicy
             Reason: "Update metadata is accepted from the configured HTTPS feed; payload integrity must pass before staging or apply.");
     }
 
-    private static bool IsNewerVersion(string candidate, string installed) =>
-        Version.TryParse(candidate, out var candidateVersion)
-        && Version.TryParse(installed, out var installedVersion)
-        && candidateVersion > installedVersion;
 }

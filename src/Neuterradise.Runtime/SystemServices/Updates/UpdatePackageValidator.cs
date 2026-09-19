@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Neuterradise.App.SystemServices;
 using Neuterradise.App.SystemServices.Storage;
+using Neuterradise.Release.Contracts;
 
 namespace Neuterradise.App.SystemServices.Updates;
 
@@ -57,8 +58,35 @@ public sealed class UpdatePackageValidator
             }
         }
 
-        if (!manifestFiles.Contains(ProductIdentity.AppExecutableName))
-            return UpdatePackageValidationResult.Reject("Payload is missing the application executable from approved file membership.");
+        ReleaseContractDocument contract;
+        try
+        {
+            contract = ReleaseContract.Current;
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidOperationException or ArgumentException)
+        {
+            return UpdatePackageValidationResult.Reject($"Release contract is invalid: {exception.Message}");
+        }
+
+        if (!string.Equals(contract.ProductId, manifest.ProductId, StringComparison.Ordinal)
+            || !string.Equals(contract.RuntimeIdentifier, manifest.RuntimeIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
+            return UpdatePackageValidationResult.Reject("Update manifest contradicts the canonical release contract identity.");
+        }
+
+        foreach (var requiredMember in contract.RequiredMembers)
+        {
+            if (!manifestFiles.Contains(requiredMember))
+                return UpdatePackageValidationResult.Reject($"Payload is missing required release member '{requiredMember}'.");
+        }
+
+        foreach (var requiredFileName in contract.RequiredUniqueFileNames)
+        {
+            var matches = manifestFiles.Count(path =>
+                string.Equals(Path.GetFileName(path), requiredFileName, StringComparison.OrdinalIgnoreCase));
+            if (matches != 1)
+                return UpdatePackageValidationResult.Reject($"Payload must contain exactly one required runtime member named '{requiredFileName}'.");
+        }
 
         if (manifestFiles.Any(path =>
                 path.StartsWith("src/", StringComparison.OrdinalIgnoreCase)

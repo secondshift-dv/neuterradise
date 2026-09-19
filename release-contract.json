@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "productId": "neuterradise",
+  "runtimeIdentifier": "win-x64",
+  "modelsRelativeRoot": "workers/models",
+  "requiredMembers": [
+    "NeuTerradise.exe",
+    "NeuTerradise.Updater.exe",
+    "workers/NeuTerradise.Profiling.Worker.exe",
+    "workers/Neuterradise.Release.Contracts.dll",
+    "workers/models/yunet/face_detection_yunet_2023mar.onnx",
+    "workers/models/sface/face_recognition_sface_2021dec.onnx",
+    "tools/ffmpeg.exe",
+    "tools/ffprobe.exe",
+    "deployment/artifacts.json",
+    "deployment/release-contract.json",
+    "THIRD-PARTY-NOTICES.txt"
+  ],
+  "requiredUniqueFileNames": [
+    "OpenCvSharpExtern.dll"
+  ],
+  "ffmpegMirrorUrl": "https://github.com/secondshift-dv/neuterradise/releases/download/dependencies-ffmpeg-8.1.2/ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-8.1.zip"
+}

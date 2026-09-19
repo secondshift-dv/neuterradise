@@ -36,12 +36,36 @@ public sealed record UpdateManifest(
         if (!string.Equals(ProductId, ProductIdentity.ProductId, StringComparison.Ordinal))
             throw new FormatException("Update product identity does not match.");
 
-        ArgumentException.ThrowIfNullOrWhiteSpace(ProductVersion);
+        var productVersion = ParseStrictVersion(ProductVersion, "Update product version");
         ArgumentException.ThrowIfNullOrWhiteSpace(RuntimeIdentifier);
+        if (MinimumCompatibleVersion is { } minimumCompatibleVersion)
+        {
+            var minimum = ParseStrictVersion(minimumCompatibleVersion, "Minimum compatible version");
+            if (minimum > productVersion)
+                throw new FormatException("Minimum compatible version cannot be newer than the update itself.");
+        }
         if (PayloadByteLength < 0)
             throw new FormatException("Update payload length is invalid.");
         ValidateHash(PayloadSha256);
         ValidateFileMembership(Files, MaxFiles, "Update manifest");
+    }
+
+    internal static Version ParseStrictVersion(string value, string label)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        var trimmed = value.Trim();
+        if (!Version.TryParse(trimmed, out var parsed)
+            || parsed.Major < 0
+            || parsed.Minor < 0
+            || parsed.Build < 0)
+        {
+            throw new FormatException($"{label} is not a supported numeric product version.");
+        }
+
+        if (!string.Equals(parsed.ToString(), trimmed, StringComparison.Ordinal))
+            throw new FormatException($"{label} must use canonical numeric version syntax.");
+
+        return parsed;
     }
 
     internal static void ValidateFileMembership(

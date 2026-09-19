@@ -1,6 +1,7 @@
 using System.IO;
 using System.Threading;
 using Neuterradise.Profiling.Protocol;
+using Neuterradise.Release.Contracts;
 
 namespace Neuterradise.Profiling.Worker;
 
@@ -18,7 +19,9 @@ internal sealed class WorkerRuntimeEnvironment
     private WorkerRuntimeEnvironment(string installRoot)
     {
         InstallRoot = NormalizeRoot(installRoot);
-        ModelsRoot = Path.Combine(InstallRoot, "models");
+        ModelsRoot = Path.Combine(
+            InstallRoot,
+            ReleaseContract.Current.ModelsRelativeRoot.Replace('/', Path.DirectorySeparatorChar));
     }
 
     public static WorkerRuntimeEnvironment Current => CurrentAuthority.Value;

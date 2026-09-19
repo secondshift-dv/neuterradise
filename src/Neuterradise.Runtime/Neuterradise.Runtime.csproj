@@ -16,6 +16,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Neuterradise.Release.Contracts\Neuterradise.Release.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="NeuTerradise" />
   </ItemGroup>
   <ItemGroup>
