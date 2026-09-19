@@ -1586,12 +1586,19 @@ public sealed class ImportWrites
                    reused.state, reused.sha256, reused.byte_length, reused.bundle_sha256,
                    reused.dependency_status, reused.dependency_discovery_state,
                    reused.current_managed_relative_path, reused.current_managed_file_name,
-                   EXISTS(
-                       SELECT 1
-                       FROM trash_entries te
-                       WHERE te.entity_type = 'ASSET'
-                         AND te.entity_id = reused.asset_id
-                         AND te.state IN ('PENDING','EXECUTING')
+                   (
+                       EXISTS(
+                           SELECT 1
+                           FROM trash_entries te
+                           WHERE te.entity_type = 'ASSET'
+                             AND te.entity_id = reused.asset_id
+                             AND te.state IN ('PENDING','EXECUTING')
+                       )
+                       OR EXISTS(
+                           SELECT 1
+                           FROM import_cancel_asset_reservations reservation
+                           WHERE reservation.asset_id = reused.asset_id
+                       )
                    )
             FROM assets candidate
             JOIN assets reused ON reused.asset_id = $reusedId

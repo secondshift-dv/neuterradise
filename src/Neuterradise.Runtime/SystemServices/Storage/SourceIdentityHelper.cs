@@ -184,7 +184,6 @@ public static class SourceIdentityHelper
     private const uint GenericRead = 0x80000000;
     private const uint DeleteAccess = 0x00010000;
     private const uint FileShareRead = 0x00000001;
-    private const uint FileShareWrite = 0x00000002;
     private const uint FileShareDelete = 0x00000004;
     private const uint OpenExisting = 3;
     private const uint FileAttributeNormal = 0x00000080;

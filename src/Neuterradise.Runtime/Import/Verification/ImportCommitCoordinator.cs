@@ -756,12 +756,25 @@ public sealed class ImportCommitCoordinator
             }
 
             var writer = new ProfileManifestWriter(_vaultPaths);
-            await writer.WriteManifestAsync(
+            var manifestWrite = await writer.WriteManifestAsync(
                     provisioningFolder,
                     manifest,
                     state.OperationId,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (!manifestWrite.IsSuccess)
+            {
+                if (manifestWrite.Status == StorageOperationStatus.Cancelled)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                throw new IOException(
+                    manifestWrite.SafeErrorDetail
+                    ?? "The operation-scoped Profile manifest could not be durably written.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             try
             {
