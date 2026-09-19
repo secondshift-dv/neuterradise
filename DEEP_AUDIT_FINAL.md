@@ -2384,7 +2384,7 @@ The security query must no longer report the extraction sink, and all malicious 
 
 **Status:** EXECUTION-EVIDENCE-GAP
 
-### Historical claim
+### Temuan / evidence gap
 
 The historical register claimed that the ZIP produced by `Compress-Archive` contains explicit directory entries that `UpdatePackageStager` rejects because normalized names ending in `/` are refused.
 
