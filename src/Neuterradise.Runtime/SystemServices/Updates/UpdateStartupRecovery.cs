@@ -74,7 +74,10 @@ public sealed class UpdateStartupRecovery
             return UpdateStartupRecoveryResult.NoAction();
         }
 
-        if (plan.Step is "AbortedParentStillRunning" or "StagingPrepared" or "RestoredFromBackup")
+        if (plan.Step is "AbortedParentStillRunning"
+            or "DeferredShutdownDeadlineExpired"
+            or "StagingPrepared"
+            or "RestoredFromBackup")
         {
             if (Directory.Exists(_install.Root) && !Directory.Exists(paths.BackupRoot))
             {

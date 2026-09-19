@@ -12,8 +12,6 @@ namespace Neuterradise.Updater;
 
 public sealed class ReplacementEngine
 {
-    private const int MaxWaitParentExitSeconds = 60;
-
     public static async Task<ReplacementResult> ExecuteAsync(
         string handoffPath,
         string expectedHandoffSha256,
@@ -70,6 +68,8 @@ public sealed class ReplacementEngine
             return ReplacementResult.Failed("Handoff operation id is invalid.");
         if (string.IsNullOrWhiteSpace(handoff.VaultRoot))
             return ReplacementResult.Failed("Handoff is missing the protected VaultRoot authority.");
+        if (handoff.ShutdownDeadlineUtc is null)
+            return ReplacementResult.Failed("Handoff is missing the shared shutdown deadline authority.");
         string installRoot;
         string payloadPath;
         string appStateRoot;
@@ -131,10 +131,12 @@ public sealed class ReplacementEngine
 
         if (parentPid.HasValue && parentPid.Value > 0)
         {
-            var exited = await WaitForProcessExitAsync(
-                parentPid.Value,
-                TimeSpan.FromSeconds(MaxWaitParentExitSeconds),
-                cancellationToken);
+            var remainingParentWait = handoff.ShutdownDeadlineUtc.Value - DateTimeOffset.UtcNow;
+            var exited = remainingParentWait > TimeSpan.Zero
+                && await WaitForProcessExitAsync(
+                    parentPid.Value,
+                    remainingParentWait,
+                    cancellationToken);
             if (!exited)
             {
                 await PersistRecoveryStepAsync(
@@ -145,9 +147,10 @@ public sealed class ReplacementEngine
                     backupRoot,
                     payloadPath,
                     expectedManifestSha256,
-                    "AbortedParentStillRunning",
+                    "DeferredShutdownDeadlineExpired",
                     cancellationToken);
-                return ReplacementResult.Failed($"Parent process (PID {parentPid.Value}) did not exit within {MaxWaitParentExitSeconds} seconds. Aborting replacement without mutating files.");
+                return ReplacementResult.Failed(
+                    $"Parent process (PID {parentPid.Value}) did not exit before the shared update shutdown deadline. Replacement was deferred without mutating InstallRoot.");
             }
         }
 
@@ -647,7 +650,8 @@ internal sealed record HandoffData(
     string SourcePayloadPath,
     string DestinationInstallRoot,
     HandoffManifestData Manifest,
-    string? VaultRoot);
+    string? VaultRoot,
+    DateTimeOffset? ShutdownDeadlineUtc);
 
 internal sealed record HandoffManifestData(
     int SchemaVersion,

@@ -199,4 +199,5 @@ public sealed record UpdateHandoff(
     string SourcePayloadPath,
     string DestinationInstallRoot,
     UpdateManifest Manifest,
-    string? VaultRoot = null);
+    string? VaultRoot = null,
+    DateTimeOffset? ShutdownDeadlineUtc = null);

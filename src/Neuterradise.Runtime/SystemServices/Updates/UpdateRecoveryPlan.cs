@@ -41,7 +41,7 @@ public sealed record UpdateRecoveryPlan(
 
         RootPathRules.RejectExistingReparsePoints(appState.Root, expectedPayloadRoot);
 
-        if (string.Equals(Step, "AbortedParentStillRunning", StringComparison.Ordinal))
+        if (Step is "AbortedParentStillRunning" or "DeferredShutdownDeadlineExpired")
         {
             if (!string.IsNullOrWhiteSpace(StagingRoot) || !string.IsNullOrWhiteSpace(BackupRoot))
                 ValidateDeterministicReplacementSiblings(normalizedInstallRoot, appState, vaultRoot);

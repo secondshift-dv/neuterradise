@@ -9,6 +9,7 @@ namespace Neuterradise.App.SystemServices.Updates;
 /// </summary>
 public sealed class UpdateCoordinator : IDisposable
 {
+    public static readonly TimeSpan UpdateShutdownBudget = TimeSpan.FromSeconds(60);
     public const string StatusNotChecked = "not_checked";
     public const string StatusFeedSaved = "feed_saved";
     public const string StatusChecking = "checking";
@@ -29,7 +30,7 @@ public sealed class UpdateCoordinator : IDisposable
     private readonly UpdateTrustPolicy _trust;
     private readonly UpdatePackageStager _stager;
     private readonly UpdateHandoffService _handoff;
-    private readonly Action _requestControlledShutdown;
+    private readonly Action<DateTimeOffset> _requestControlledShutdown;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _stateGate = new();
 
@@ -50,7 +51,7 @@ public sealed class UpdateCoordinator : IDisposable
         UpdateTrustPolicy trust,
         UpdatePackageStager stager,
         UpdateHandoffService handoff,
-        Action requestControlledShutdown)
+        Action<DateTimeOffset> requestControlledShutdown)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _appState = appState ?? throw new ArgumentNullException(nameof(appState));
@@ -537,12 +538,17 @@ public sealed class UpdateCoordinator : IDisposable
         var stagedRoot = _appState.ResolveContainedPath(
             AppStatePathArea.UpdateStaging,
             operationId.ToString("D"));
+        // X55: one absolute deadline is established before helper launch and is consumed by
+        // both the application shutdown path and the updater parent-wait path. No component gets
+        // a fresh timeout window after another component already consumed time.
+        var shutdownDeadlineUtc = DateTimeOffset.UtcNow.Add(UpdateShutdownBudget);
         var handoff = new UpdateHandoff(
             operationId,
             stagedRoot,
             _install.Root,
             manifest,
-            _vaultRoot);
+            _vaultRoot,
+            shutdownDeadlineUtc);
 
         SetState(new UpdatePresentationState(
             StatusPreparing,
@@ -574,7 +580,7 @@ public sealed class UpdateCoordinator : IDisposable
             true,
             manifest.ProductVersion));
 
-        _requestControlledShutdown();
+        _requestControlledShutdown(shutdownDeadlineUtc);
         return UpdateCommandResult.Success();
     }
 

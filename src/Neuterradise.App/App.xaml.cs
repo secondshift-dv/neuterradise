@@ -619,18 +619,27 @@ public partial class App : Application
             "App.ControlledShutdown",
             exception => _crash?.Capture(exception, CrashOrigin.ControlledShutdownFailure)));
 
-    private void RequestUpdateShutdown() =>
+    private void RequestUpdateShutdown(DateTimeOffset shutdownDeadlineUtc) =>
         UiDispatch.Post(() => TaskObserver.Observe(
-            ControlledShutdownAsync(0),
+            ControlledShutdownAsync(0, shutdownDeadlineUtc),
             "App.UpdateShutdown",
             exception => _crash?.Capture(exception, CrashOrigin.ControlledShutdownFailure)));
 
-    private async Task ControlledShutdownAsync(int exitCode)
+    private async Task ControlledShutdownAsync(
+        int exitCode,
+        DateTimeOffset? shutdownDeadlineUtc = null)
     {
         if (Interlocked.Exchange(ref _shutdownStarted, 1) != 0)
         {
             return;
         }
+
+        var absoluteDeadlineUtc = shutdownDeadlineUtc
+            ?? DateTimeOffset.UtcNow.Add(ShutdownCoordinator.DefaultShutdownBudget);
+
+        // X54/X55: close user mutation admission synchronously at top-level shutdown entry,
+        // before persistence/finalizer/activity awaits can consume the shared deadline.
+        _context?.Catalog.MutationAdmission.Close();
 
         try
         {
@@ -660,7 +669,13 @@ public partial class App : Application
 
             if (_shutdown is not null)
             {
-                var report = await _shutdown.ShutdownAsync().ConfigureAwait(true);
+                var remaining = absoluteDeadlineUtc - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    remaining = TimeSpan.FromMilliseconds(1);
+                }
+
+                var report = await _shutdown.ShutdownAsync(remaining).ConfigureAwait(true);
                 Trace.TraceInformation("Shutdown: timedOut={0}, remainingJobs={1}, cancelled={2}, workerReleased={3}",
                     report.TimedOut, report.NonterminalJobsLeftForRestart, report.CancelledDuringShutdown, report.ProfilingWorkerReleased);
             }
