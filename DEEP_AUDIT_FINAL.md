@@ -57,7 +57,7 @@ Do not translate CLOSED-DOC into fixed, passed, safe, production-ready, or runti
 5. X06–X08 remain Stage 3 findings.
 6. X09 remains the Stage 4 same-volume replay finding.
 7. Profile Purge FK closure incomplete is canonical X37.
-8. New findings after this document start at X64.
+8. New findings after this document start at X74.
 9. Do not renumber X01–X63 to make the sequence visually contiguous.
 10. A future audit finding must record provenance, evidence, root cause, corrective action, prevention, verification, and status when it is created.
 
@@ -2914,7 +2914,9 @@ Shared contract:
 
 ## Cluster C — Scheduler / command / shutdown
 
-X19–X26, X51–X55
+X19–X26, X52–X55, X66, X69, X73
+
+X51 is REJECTED and is not part of this remediation cluster.
 
 Shared contract:
 
@@ -2927,7 +2929,8 @@ Shared contract:
 
 ## Cluster D — Faces / Worker
 
-X03, X30–X36, X59
+Source findings: X03, X30–X36.  
+Verification companion: X59.
 
 Shared contract:
 
@@ -2950,7 +2953,8 @@ background read/compute → durable mutation where required → UI dispatcher co
 
 ## Cluster F — Release trust and updater lifecycle
 
-X02, X43–X50, X55, X57, X60, X64–X65, X71
+Source/hardening findings: X02, X43–X50, X55, X64, X71.  
+Verification companions: X57, X60, X65.
 
 Shared contract:
 
@@ -2967,7 +2971,7 @@ The following order minimizes rework and prevents fixing symptoms before their a
 - Commit and retain this file.
 - Do not renumber the ledger.
 - Do not open Stage 13 for this baseline.
-- New source defects discovered during implementation use X64+ only if they are genuinely outside the existing finding root cause.
+- New source defects discovered during implementation use X74+ only if they are genuinely outside the existing finding root cause.
 
 Acceptance: all agents use this document as the audit authority.
 
@@ -3097,7 +3101,7 @@ Acceptance:
 
 Target:
 
-- remaining X45–X48 plus integration with X02/X43–X50/X55/X64–X65/X71.
+- remaining X45–X48 plus integration with X02/X43–X50/X55/X64/X71. X65 remains an R8 execution-evidence task unless reproduced.
 
 Acceptance:
 
