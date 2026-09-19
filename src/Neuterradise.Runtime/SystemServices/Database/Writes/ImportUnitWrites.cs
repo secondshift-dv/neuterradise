@@ -169,18 +169,51 @@ public sealed class ImportUnitWrites
 
         await using (var jobs = transaction.CreateCommand(paused
             ? """
-              UPDATE jobs SET state = 'PAUSED', row_version = row_version + 1
+              UPDATE jobs
+              SET state = 'PAUSED',
+                  row_version = row_version + 1
               WHERE owner_type = 'Asset'
                 AND state IN ('PENDING','RUNNABLE','FAILED_RETRYABLE')
-                AND owner_id IN (SELECT candidate_asset_id FROM import_items
-                                 WHERE import_unit_id = $unitId AND candidate_asset_id IS NOT NULL);
+                AND owner_id IN (
+                    SELECT candidate_asset_id
+                    FROM import_items
+                    WHERE import_unit_id = $unitId
+                      AND candidate_asset_id IS NOT NULL
+                    UNION
+                    SELECT asset_id
+                    FROM import_asset_interests
+                    WHERE import_unit_id = $unitId
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM import_asset_interests other
+                    JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                    WHERE other.asset_id = jobs.owner_id
+                      AND other.import_unit_id <> $unitId
+                      AND consumer.is_paused = 0
+                      AND consumer.state NOT IN (
+                          'COMMITTING','COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                          'CANCELLED','FAILED_TERMINAL'
+                      )
+                );
               """
             : """
-              UPDATE jobs SET state = 'PENDING', not_before_ms = NULL, row_version = row_version + 1
+              UPDATE jobs
+              SET state = 'PENDING',
+                  not_before_ms = NULL,
+                  row_version = row_version + 1
               WHERE owner_type = 'Asset'
                 AND state = 'PAUSED'
-                AND owner_id IN (SELECT candidate_asset_id FROM import_items
-                                 WHERE import_unit_id = $unitId AND candidate_asset_id IS NOT NULL);
+                AND owner_id IN (
+                    SELECT candidate_asset_id
+                    FROM import_items
+                    WHERE import_unit_id = $unitId
+                      AND candidate_asset_id IS NOT NULL
+                    UNION
+                    SELECT asset_id
+                    FROM import_asset_interests
+                    WHERE import_unit_id = $unitId
+                );
               """))
         {
             jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
@@ -230,11 +263,22 @@ public sealed class ImportUnitWrites
         }
 
         await using (var jobs = transaction.CreateCommand("""
-            UPDATE jobs SET state = 'PENDING', not_before_ms = NULL, row_version = row_version + 1
+            UPDATE jobs
+            SET state = 'PENDING',
+                not_before_ms = NULL,
+                row_version = row_version + 1
             WHERE owner_type = 'Asset'
               AND state = 'PAUSED'
-              AND owner_id IN (SELECT candidate_asset_id FROM import_items
-                               WHERE import_unit_id = $unitId AND candidate_asset_id IS NOT NULL);
+              AND owner_id IN (
+                  SELECT candidate_asset_id
+                  FROM import_items
+                  WHERE import_unit_id = $unitId
+                    AND candidate_asset_id IS NOT NULL
+                  UNION
+                  SELECT asset_id
+                  FROM import_asset_interests
+                  WHERE import_unit_id = $unitId
+              );
             """))
         {
             jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
