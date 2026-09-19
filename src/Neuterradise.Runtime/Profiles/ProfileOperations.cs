@@ -241,14 +241,24 @@ public sealed class ProfileOperations
                     "Media in this Profile is still being moved. Wait for that to finish, then rename again.");
             }
 
+            var collisions = await ReadRenameCollisionSnapshotAsync(
+                transaction,
+                request.ProfileId,
+                cancellationToken).ConfigureAwait(false);
+
             string targetFolder;
             List<OwnedAssetRenamePlan> assetPlans;
             try
             {
                 (targetFolder, assetPlans) = PlanRenameTargets(
-                    request.ProfileId, normalizedDisplayName, profile.StorageToken, ownedAssets);
+                    request.ProfileId,
+                    normalizedDisplayName,
+                    profile.StorageToken,
+                    profile.CurrentManagedRelativePath,
+                    ownedAssets,
+                    collisions);
             }
-            catch (ArgumentException)
+            catch (Exception exception) when (exception is ArgumentException or ManagedPathPlanningException)
             {
 
                 return OperationResult<ProfileRenameOutcome>.NeedsAttention(
@@ -974,13 +984,40 @@ public sealed class ProfileOperations
         Guid profileId,
         string displayName,
         string profileStorageToken,
-        IReadOnlyList<OwnedManagedAsset> ownedAssets)
+        string? currentProfileFolder,
+        IReadOnlyList<OwnedManagedAsset> ownedAssets,
+        RenameCollisionSnapshot collisions)
     {
         var profileToken = new ProfileStorageToken(profileStorageToken);
-        var targetFolder = _pathPlanner
-            .PlanProfile(profileId, displayName, profileToken)
-            .ProfileFolderRelativePath;
+        var targetProfilePlan = _pathPlanner.AllocateProfilePlan(
+            profileId,
+            displayName,
+            profileToken,
+            candidate =>
+            {
+                var relative = candidate.ProfileFolderRelativePath.Replace('\\', '/');
+                if (string.Equals(relative, currentProfileFolder?.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
 
+                if (collisions.ProfileFolders.Contains(relative))
+                {
+                    return true;
+                }
+
+                try
+                {
+                    return Directory.Exists(_catalog.Paths.ResolveVaultRelativePath(relative));
+                }
+                catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                {
+                    return true;
+                }
+            });
+        var targetFolder = targetProfilePlan.ProfileFolderRelativePath;
+
+        var reservedAssetPaths = new HashSet<string>(collisions.AssetPaths, StringComparer.OrdinalIgnoreCase);
         var assetPlans = new List<OwnedAssetRenamePlan>(ownedAssets.Count);
         foreach (var asset in ownedAssets)
         {
@@ -988,31 +1025,78 @@ public sealed class ProfileOperations
             string targetFileName;
             if (asset.MediaType == MediaType.Model && asset.DependencyStatus != AssetDependencyStatus.SelfContained)
             {
-                var pkgPlan = _pathPlanner.PlanModelPackage(
+                var pkgPlan = _pathPlanner.AllocateModelPackagePlan(
                     profileId,
                     displayName,
                     profileToken,
                     asset.AssetId,
                     new AssetStorageToken(asset.StorageToken),
-                    asset.CurrentManagedFileName);
+                    asset.CurrentManagedFileName,
+                    candidate =>
+                    {
+                        var primary = candidate.PrimaryManagedRelativePath.Replace('\\', '/');
+                        if (string.Equals(primary, asset.CurrentManagedFilePath.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                        {
+                            return false;
+                        }
+
+                        if (reservedAssetPaths.Contains(primary))
+                        {
+                            return true;
+                        }
+
+                        try
+                        {
+                            return Directory.Exists(_catalog.Paths.ResolveVaultRelativePath(
+                                candidate.PackageDirectoryRelativePath));
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                        {
+                            return true;
+                        }
+                    });
                 targetFilePath = pkgPlan.PrimaryManagedRelativePath;
                 targetFileName = pkgPlan.PrimaryFileName;
             }
             else
             {
-                var plan = _pathPlanner.PlanAsset(
+                var plan = _pathPlanner.AllocateAssetPlan(
                     profileId,
                     displayName,
                     profileToken,
                     asset.AssetId,
                     new AssetStorageToken(asset.StorageToken),
                     asset.MediaType,
-                    Path.GetExtension(asset.CurrentManagedFileName));
+                    Path.GetExtension(asset.CurrentManagedFileName),
+                    candidate =>
+                    {
+                        var relative = candidate.ManagedFileRelativePath!.Replace('\\', '/');
+                        if (string.Equals(relative, asset.CurrentManagedFilePath.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                        {
+                            return false;
+                        }
+
+                        if (reservedAssetPaths.Contains(relative))
+                        {
+                            return true;
+                        }
+
+                        try
+                        {
+                            return File.Exists(_catalog.Paths.ResolveVaultRelativePath(relative));
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                        {
+                            return true;
+                        }
+                    });
                 targetFilePath = plan.ManagedFileRelativePath!;
                 targetFileName = plan.ManagedFileName!;
             }
 
-            if (string.Equals(targetFilePath, asset.CurrentManagedFilePath, StringComparison.Ordinal))
+            reservedAssetPaths.Add(targetFilePath.Replace('\\', '/'));
+
+            if (string.Equals(targetFilePath, asset.CurrentManagedFilePath, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -1025,6 +1109,72 @@ public sealed class ProfileOperations
         }
 
         return (targetFolder, assetPlans);
+    }
+
+    private static async Task<RenameCollisionSnapshot> ReadRenameCollisionSnapshotAsync(
+        CatalogTransaction transaction,
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        var profileFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var profiles = transaction.CreateCommand(
+            """
+            SELECT current_managed_relative_path
+            FROM profiles
+            WHERE profile_id <> $profileId
+              AND current_managed_relative_path IS NOT NULL
+            UNION
+            SELECT target_managed_relative_path
+            FROM profiles
+            WHERE profile_id <> $profileId
+              AND target_managed_relative_path IS NOT NULL;
+            """))
+        {
+            profiles.Parameters.AddWithValue("$profileId", DbGuid.Format(profileId));
+            await using var reader = await profiles.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                profileFolders.Add(reader.GetString(0).Replace('\\', '/'));
+            }
+        }
+
+        var assetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var assets = transaction.CreateCommand(
+            """
+            SELECT a.current_managed_relative_path || '/' || a.current_managed_file_name
+            FROM assets a
+            WHERE a.current_managed_relative_path IS NOT NULL
+              AND a.current_managed_file_name IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM profile_assets owner
+                  WHERE owner.asset_id = a.asset_id
+                    AND owner.profile_id = $profileId
+                    AND owner.relation_type = 'OWNER'
+              )
+            UNION
+            SELECT a.target_managed_relative_path || '/' || a.target_managed_file_name
+            FROM assets a
+            WHERE a.target_managed_relative_path IS NOT NULL
+              AND a.target_managed_file_name IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM profile_assets owner
+                  WHERE owner.asset_id = a.asset_id
+                    AND owner.profile_id = $profileId
+                    AND owner.relation_type = 'OWNER'
+              );
+            """))
+        {
+            assets.Parameters.AddWithValue("$profileId", DbGuid.Format(profileId));
+            await using var reader = await assets.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                assetPaths.Add(reader.GetString(0).Replace('\\', '/'));
+            }
+        }
+
+        return new RenameCollisionSnapshot(profileFolders, assetPaths);
     }
 
     private static async Task<ProfileRenameState?> ReadRenameStateAsync(
@@ -1328,6 +1478,10 @@ public sealed class ProfileOperations
         public string CurrentManagedFilePath =>
             $"{CurrentManagedRelativePath}/{CurrentManagedFileName}";
     }
+
+    private sealed record RenameCollisionSnapshot(
+        HashSet<string> ProfileFolders,
+        HashSet<string> AssetPaths);
 
     private sealed record OwnedAssetRenamePlan(
         Guid AssetId,
