@@ -700,7 +700,9 @@ public sealed class ImportUnitWrites
                 }
                 if (!itemReader.IsDBNull(3))
                 {
-                    reused.Add(DbGuid.Parse(itemReader.GetString(3)));
+                    var reusedAssetId = DbGuid.Parse(itemReader.GetString(3));
+                    reused.Add(reusedAssetId);
+                    scopes.Add(new ImportJobScope("Asset", reusedAssetId));
                 }
             }
         }
