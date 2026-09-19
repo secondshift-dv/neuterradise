@@ -38,7 +38,6 @@ public sealed class ImportViewModel : ScreenStateViewModel, IDisposable
     private readonly CatalogDb? _catalog;
     private readonly NavigationCoordinator? _navigation;
     private readonly ImportReads? _importReads;
-    private readonly ImportUnitWrites? _importUnitWrites;
     private readonly ImportIntakeCoordinator? _intake;
     private readonly ImportPreparationCoordinator? _preparationCoordinator;
     private readonly ImportUnitControlAuthority? _controlAuthority;
@@ -80,10 +79,17 @@ public sealed class ImportViewModel : ScreenStateViewModel, IDisposable
         _catalog = catalog;
         _navigation = navigation;
         _importReads = importReads ?? _catalog?.ImportReads;
-        _importUnitWrites = importUnitWrites ?? (_catalog is null ? null : new ImportUnitWrites(_catalog));
         _intake = intake ?? (_catalog is null ? null : new ImportIntakeCoordinator(_catalog));
         _preparationCoordinator = preparationCoordinator ?? (_catalog is not null ? new ImportPreparationCoordinator(_catalog) : null);
-        _controlAuthority = _catalog is null ? null : new ImportUnitControlAuthority(_catalog, finalizer, jobCancellation: cancellation);
+        var controlWrites = importUnitWrites ?? (_catalog is null ? null : new ImportUnitWrites(_catalog));
+        _controlAuthority = _catalog is null
+            ? null
+            : new ImportUnitControlAuthority(
+                _catalog,
+                finalizer,
+                jobCancellation: cancellation,
+                unitWrites: controlWrites,
+                preparationCoordinator: _preparationCoordinator);
         _finalizer = finalizer;
 
         if (activityService is not null)
@@ -554,7 +560,7 @@ public sealed class ImportViewModel : ScreenStateViewModel, IDisposable
 
     private async Task RetryUnitAsync(Guid? unitId)
     {
-        if (_importUnitWrites is null || unitId is not { } id)
+        if (_controlAuthority is null || unitId is not { } id)
         {
             return;
         }
@@ -565,53 +571,29 @@ public sealed class ImportViewModel : ScreenStateViewModel, IDisposable
             return;
         }
 
-        // Required work that failed transiently gets another chance first; retrying the import must
-        // not immediately fail again on the same stale job.
-        if (_catalog is not null)
-        {
-            var jobs = await new SchedulerReads(_catalog).GetJobsForImportUnitAssetsAsync(id, RouteCancellationToken);
-            var writes = new JobWrites(_catalog);
-            foreach (var job in jobs.Where(j => j.State == JobState.FailedRetryable
-                         && string.Equals(j.Kind, "HashAsset", StringComparison.OrdinalIgnoreCase)))
-            {
-                await writes.ResumeAsync(job.JobId, null, null, RouteCancellationToken);
-            }
-        }
-
-        if (_preparationCoordinator is not null)
-        {
-            // A unit whose work is already done only needs its state settled; re-preparing would
-            // re-read every file for nothing.
-            var readiness = await _preparationCoordinator.ResolveUnitStateAsync(id, RouteCancellationToken);
-            if (!readiness.IsReady && await _importUnitWrites.RetryUnitAsync(id, RouteCancellationToken))
-            {
-                await _preparationCoordinator.PrepareUnitAsync(id, RouteCancellationToken);
-            }
-        }
-
-        _finalizer?.Wake(id);
+        await _controlAuthority.RetryAsync(id, RouteCancellationToken);
         _activity?.RequestRefresh();
     }
 
     private async Task ClearHistoryItemAsync(ImportUnitItemViewModel? unit)
     {
-        if (_importUnitWrites is null || unit is null || !unit.CanClearHistory)
+        if (_controlAuthority is null || unit is null || !unit.CanClearHistory)
         {
             return;
         }
 
-        await _importUnitWrites.HideFinishedFromHistoryAsync(unit.UnitId, RouteCancellationToken);
+        await _controlAuthority.ClearHistoryItemAsync(unit.UnitId, RouteCancellationToken);
         _activity?.RequestRefresh();
     }
 
     private async Task ClearHistoryAsync()
     {
-        if (_importUnitWrites is null || !HasClearableHistory)
+        if (_controlAuthority is null || !HasClearableHistory)
         {
             return;
         }
 
-        await _importUnitWrites.HideAllFinishedFromHistoryAsync(RouteCancellationToken);
+        await _controlAuthority.ClearHistoryAsync(RouteCancellationToken);
         _activity?.RequestRefresh();
     }
 

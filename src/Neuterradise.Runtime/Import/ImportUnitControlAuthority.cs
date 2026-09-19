@@ -1,3 +1,4 @@
+using Neuterradise.App.Import.Preparation;
 using Neuterradise.App.SystemServices.Database;
 using Neuterradise.App.SystemServices.Database.Reads;
 using Neuterradise.App.SystemServices.Database.Writes;
@@ -26,6 +27,7 @@ public sealed class ImportUnitControlAuthority
     private readonly ImportUnitWrites _unitWrites;
     private readonly ImportPriorityOperations _priority;
     private readonly ImportFinalizer? _finalizer;
+    private readonly ImportPreparationCoordinator? _preparationCoordinator;
     private readonly JobCancellationOperations _jobCancellation;
     private readonly SchedulerReads _schedulerReads;
     private readonly ImportCancellationSettlement _settlement;
@@ -39,12 +41,15 @@ public sealed class ImportUnitControlAuthority
         ImportFinalizer? finalizer = null,
         TimeProvider? timeProvider = null,
         JobCancellationOperations? jobCancellation = null,
-        TrashCoordinator? trashCoordinator = null)
+        TrashCoordinator? trashCoordinator = null,
+        ImportUnitWrites? unitWrites = null,
+        ImportPreparationCoordinator? preparationCoordinator = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-        _unitWrites = new ImportUnitWrites(catalog, timeProvider);
+        _unitWrites = unitWrites ?? new ImportUnitWrites(catalog, timeProvider);
         _priority = new ImportPriorityOperations(catalog);
         _finalizer = finalizer;
+        _preparationCoordinator = preparationCoordinator;
         _jobCancellation = jobCancellation ?? new JobCancellationOperations(catalog);
         _schedulerReads = new SchedulerReads(catalog);
         _settlement = new ImportCancellationSettlement(catalog, trashCoordinator, timeProvider);
@@ -128,6 +133,75 @@ public sealed class ImportUnitControlAuthority
             .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
 
         await _priority.FocusAsync(unitId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Retries one FAILED_RETRYABLE import under command admission and the per-unit mutation lease.
+    /// </summary>
+    public async Task<bool> RetryAsync(Guid unitId, CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RetryAsync));
+        if (unitId == Guid.Empty)
+        {
+            return false;
+        }
+
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
+        if (_preparationCoordinator is not null)
+        {
+            var readiness = await _preparationCoordinator
+                .ResolveUnitStateAsync(unitId, cancellationToken)
+                .ConfigureAwait(false);
+            if (readiness.IsReady)
+            {
+                _finalizer?.Wake(unitId);
+                return true;
+            }
+        }
+
+        if (!await _unitWrites.RetryUnitAsync(unitId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        JobSignals.Raise();
+
+        if (_preparationCoordinator is not null)
+        {
+            await _preparationCoordinator
+                .PrepareUnitAsync(unitId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        _finalizer?.Wake(unitId);
+        return true;
+    }
+
+    public async Task<bool> ClearHistoryItemAsync(
+        Guid unitId,
+        CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ClearHistoryItemAsync));
+        if (unitId == Guid.Empty)
+        {
+            return false;
+        }
+
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+        return await _unitWrites
+            .HideFinishedFromHistoryAsync(unitId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<int> ClearHistoryAsync(CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ClearHistoryAsync));
+        return await _unitWrites
+            .HideAllFinishedFromHistoryAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

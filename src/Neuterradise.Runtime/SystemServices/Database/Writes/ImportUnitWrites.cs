@@ -182,66 +182,68 @@ public sealed class ImportUnitWrites
             changed = await unit.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using (var jobs = transaction.CreateCommand(paused
-            ? """
-              UPDATE jobs
-              SET state = 'PAUSED',
-                  row_version = row_version + 1
-              WHERE owner_type = 'Asset'
-                AND state IN ('PENDING','RUNNABLE','FAILED_RETRYABLE')
-                AND owner_id IN (
-                    SELECT candidate_asset_id
-                    FROM import_items
-                    WHERE import_unit_id = $unitId
-                      AND candidate_asset_id IS NOT NULL
-                    UNION
-                    SELECT asset_id
-                    FROM import_asset_interests
-                    WHERE import_unit_id = $unitId
-                )
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM import_asset_interests other
-                    JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
-                    WHERE other.asset_id = jobs.owner_id
-                      AND other.import_unit_id <> $unitId
-                      AND consumer.is_paused = 0
-                      AND consumer.state NOT IN (
-                          'COMMITTING','COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
-                          'CANCELLED','FAILED_TERMINAL'
-                      )
-                );
-              """
-            : """
-              UPDATE jobs
-              SET state = 'PENDING',
-                  not_before_ms = NULL,
-                  row_version = row_version + 1
-              WHERE owner_type = 'Asset'
-                AND state = 'PAUSED'
-                AND owner_id IN (
-                    SELECT candidate_asset_id
-                    FROM import_items
-                    WHERE import_unit_id = $unitId
-                      AND candidate_asset_id IS NOT NULL
-                    UNION
-                    SELECT asset_id
-                    FROM import_asset_interests
-                    WHERE import_unit_id = $unitId
-                );
-              """))
-        {
-            jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
-            await jobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
+        // Job state is subordinate to the unit transition. If the lifecycle predicate is stale,
+        // the command is a complete no-op and cannot mutate Asset jobs.
         if (changed > 0)
         {
-            transaction.QueueInvalidation(new CatalogInvalidation(
-                Guid.Empty,
-                [unitId],
-                CatalogInvalidationDomain.Import,
-                0));
+            await using (var jobs = transaction.CreateCommand(paused
+                ? """
+                  UPDATE jobs
+                  SET state = 'PAUSED',
+                      row_version = row_version + 1
+                  WHERE owner_type = 'Asset'
+                    AND state IN ('PENDING','RUNNABLE','FAILED_RETRYABLE')
+                    AND owner_id IN (
+                        SELECT candidate_asset_id
+                        FROM import_items
+                        WHERE import_unit_id = $unitId
+                          AND candidate_asset_id IS NOT NULL
+                        UNION
+                        SELECT asset_id
+                        FROM import_asset_interests
+                        WHERE import_unit_id = $unitId
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM import_asset_interests other
+                        JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                        WHERE other.asset_id = jobs.owner_id
+                          AND other.import_unit_id <> $unitId
+                          AND consumer.is_paused = 0
+                          AND consumer.state NOT IN (
+                              'COMMITTING','COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                              'CANCELLED','FAILED_TERMINAL'
+                          )
+                    );
+                  """
+                : """
+                  UPDATE jobs
+                  SET state = 'PENDING',
+                      not_before_ms = NULL,
+                      row_version = row_version + 1
+                  WHERE owner_type = 'Asset'
+                    AND state = 'PAUSED'
+                    AND owner_id IN (
+                        SELECT candidate_asset_id
+                        FROM import_items
+                        WHERE import_unit_id = $unitId
+                          AND candidate_asset_id IS NOT NULL
+                        UNION
+                        SELECT asset_id
+                        FROM import_asset_interests
+                        WHERE import_unit_id = $unitId
+                    );
+                  """))
+            {
+                jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+                await jobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+                transaction.QueueInvalidation(new CatalogInvalidation(
+                    Guid.Empty,
+                    [unitId],
+                    CatalogInvalidationDomain.Import,
+                    0));
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return changed > 0;
@@ -277,36 +279,36 @@ public sealed class ImportUnitWrites
             changed = await unit.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using (var jobs = transaction.CreateCommand("""
-            UPDATE jobs
-            SET state = 'PENDING',
-                not_before_ms = NULL,
-                row_version = row_version + 1
-            WHERE owner_type = 'Asset'
-              AND state = 'PAUSED'
-              AND owner_id IN (
-                  SELECT candidate_asset_id
-                  FROM import_items
-                  WHERE import_unit_id = $unitId
-                    AND candidate_asset_id IS NOT NULL
-                  UNION
-                  SELECT asset_id
-                  FROM import_asset_interests
-                  WHERE import_unit_id = $unitId
-              );
-            """))
-        {
-            jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
-            await jobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         if (changed > 0)
         {
-            transaction.QueueInvalidation(new CatalogInvalidation(
-                Guid.Empty,
-                [unitId],
-                CatalogInvalidationDomain.Import,
-                0));
+            await using (var jobs = transaction.CreateCommand("""
+                UPDATE jobs
+                SET state = 'PENDING',
+                    not_before_ms = NULL,
+                    row_version = row_version + 1
+                WHERE owner_type = 'Asset'
+                  AND state = 'PAUSED'
+                  AND owner_id IN (
+                      SELECT candidate_asset_id
+                      FROM import_items
+                      WHERE import_unit_id = $unitId
+                        AND candidate_asset_id IS NOT NULL
+                      UNION
+                      SELECT asset_id
+                      FROM import_asset_interests
+                      WHERE import_unit_id = $unitId
+                  );
+                """))
+            {
+                jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+                await jobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+                transaction.QueueInvalidation(new CatalogInvalidation(
+                    Guid.Empty,
+                    [unitId],
+                    CatalogInvalidationDomain.Import,
+                    0));
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return changed > 0;
@@ -360,6 +362,36 @@ public sealed class ImportUnitWrites
         command.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
         command.Parameters.AddWithValue("$now", now);
         var changed = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+        if (changed && targetState == ImportUnitState.Intake)
+        {
+            // Retry the failed admission job in the same transaction as FAILED_RETRYABLE -> INTAKE.
+            // The old UI called JobWrites.ResumeAsync, but that API accepts PAUSED only.
+            await using var jobs = transaction.CreateCommand("""
+                UPDATE jobs
+                SET state = 'PENDING',
+                    not_before_ms = NULL,
+                    completed_at_ms = NULL,
+                    error_code = NULL,
+                    error_detail_safe = NULL,
+                    row_version = row_version + 1
+                WHERE kind = 'HashAsset'
+                  AND owner_type = 'Asset'
+                  AND state = 'FAILED_RETRYABLE'
+                  AND owner_id IN (
+                      SELECT candidate_asset_id
+                      FROM import_items
+                      WHERE import_unit_id = $unitId
+                        AND candidate_asset_id IS NOT NULL
+                      UNION
+                      SELECT asset_id
+                      FROM import_asset_interests
+                      WHERE import_unit_id = $unitId
+                  );
+                """);
+            jobs.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            await jobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (changed)
         {
             transaction.QueueInvalidation(new CatalogInvalidation(
