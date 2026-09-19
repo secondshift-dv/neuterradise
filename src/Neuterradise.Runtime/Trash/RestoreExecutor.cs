@@ -272,8 +272,14 @@ public sealed class RestoreExecutor
             }
 
             entry = currentEntry;
-            plan = ProfileTrashPlan.FromJson(entry.PlanJson)
-                ?? throw new CatalogInvariantException($"Profile Trash plan {trashEntryId:D} is unreadable.");
+            var parsedPlan = ProfileTrashPlan.FromJson(entry.PlanJson);
+            if (parsedPlan is null)
+            {
+                return OperationResult<ProfileRestoreOutcome>.NeedsAttention(
+                    OperationErrorCode.TrashPlanUnreadable,
+                    "This Profile Trash record cannot be read safely.");
+            }
+            plan = parsedPlan;
             var currentProfile = await TrashCoordinator.ReadProfileTrashStateAsync(
                     readConnection, transaction: null, entry.EntityId, cancellationToken)
                 .ConfigureAwait(false);

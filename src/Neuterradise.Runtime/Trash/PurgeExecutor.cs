@@ -615,7 +615,7 @@ public sealed class PurgeExecutor
                   AND state IN ('PENDING','RUNNABLE','RUNNING','PAUSED','FAILED_RETRYABLE')) +
                 (SELECT COUNT(*) FROM import_units WHERE destination_profile_id = $id AND completed_at_ms IS NULL) +
                 (SELECT COUNT(*) FROM import_assignment_clusters
-                  WHERE decided_profile_id = $id AND state = 'ACCEPTED');
+                  WHERE candidate_profile_id = $id OR decided_profile_id = $id);
               """;
         return await ReadCountAsync(connection, transaction, sql, entityId, cancellationToken).ConfigureAwait(false);
     }
@@ -705,19 +705,6 @@ public sealed class PurgeExecutor
             cancellationToken, ("$id", id)).ConfigureAwait(false);
         await ExecuteAsync(transaction, "DELETE FROM profile_assets WHERE profile_id = $id;", cancellationToken, ("$id", id)).ConfigureAwait(false);
         await ExecuteAsync(transaction, "UPDATE import_units SET destination_profile_id = NULL WHERE destination_profile_id = $id;", cancellationToken, ("$id", id)).ConfigureAwait(false);
-        await ExecuteAsync(
-            transaction,
-            """
-            UPDATE import_assignment_clusters
-            SET candidate_profile_id = NULL,
-                updated_at_ms = $now,
-                row_version = row_version + 1
-            WHERE candidate_profile_id = $id
-              AND decided_profile_id IS NOT $id;
-            """,
-            cancellationToken,
-            ("$now", DbTime.Format(DateTimeOffset.UtcNow)),
-            ("$id", id)).ConfigureAwait(false);
         await ExecuteAsync(transaction, "DELETE FROM identities WHERE profile_id = $id;", cancellationToken, ("$id", id)).ConfigureAwait(false);
         await ExecuteAsync(transaction, "DELETE FROM profiles WHERE profile_id = $id;", cancellationToken, ("$id", id)).ConfigureAwait(false);
     }

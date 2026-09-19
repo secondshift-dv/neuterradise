@@ -56,11 +56,11 @@ BEFORE UPDATE ON profile_assets
 WHEN EXISTS (
     SELECT 1 FROM trash_entries te
     WHERE te.entity_type = 'PROFILE'
-      AND te.entity_id IN (OLD.profile_id, NEW.profile_id)
+      AND te.entity_id = NEW.profile_id
       AND te.state IN ('PENDING','EXECUTING')
 )
 BEGIN
-    SELECT RAISE(ABORT, 'a Profile with active Trash lifecycle cannot mutate relations');
+    SELECT RAISE(ABORT, 'a Profile with active Trash lifecycle cannot retain or acquire mutated relations');
 END;
 
 CREATE TRIGGER trg_identity_insert_blocks_active_profile_trash
