@@ -117,16 +117,20 @@ public sealed class JobDispatcher : IAsyncDisposable
         }
 
         var workers = _lanes.Values.SelectMany(runtime => runtime.Workers).ToArray();
+        var allWorkers = workers.Length == 0 ? Task.CompletedTask : Task.WhenAll(workers);
+
         if (workers.Length > 0)
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            using var gracefulWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            gracefulWait.CancelAfter(TimeSpan.FromSeconds(30));
             try
             {
-                await Task.WhenAll(workers).WaitAsync(timeout.Token).ConfigureAwait(false);
+                await allWorkers.WaitAsync(gracefulWait.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (gracefulWait.IsCancellationRequested)
             {
+                // The bounded phase only decides when to signal worker cancellation. It is not
+                // permission to dispose scheduler resources or release VaultLock while workers live.
             }
         }
 
@@ -134,6 +138,12 @@ public sealed class JobDispatcher : IAsyncDisposable
         {
             runtime.WorkerShutdown.Cancel();
         }
+
+        // X22: safety outranks the advertised shutdown latency. After cancellation is signalled,
+        // every worker must actually terminate (or fault) before dispatcher disposal can complete.
+        // This keeps JobScheduler/ProductionRuntimeRegistry/ShutdownCoordinator ownership honest:
+        // VaultLock cannot be released while a worker can still mutate catalog or managed storage.
+        await allWorkers.ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
