@@ -167,6 +167,106 @@ public sealed class ManagedPathPlanner
         return new ManagedHeroPathPlan(assetId, kind, appearance, relative, fileName);
     }
 
+    public ManagedPathPlan AllocateProfilePlan(
+        Guid profileId,
+        string displayLabel,
+        ProfileStorageToken profileStorageToken,
+        Func<ManagedPathPlan, bool> conflicts)
+    {
+        ArgumentNullException.ThrowIfNull(conflicts);
+        foreach (var profileLength in AllowedSuffixLengths)
+        {
+            var candidate = PlanProfile(profileId, displayLabel, profileStorageToken, profileLength);
+            if (!conflicts(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new ManagedPathPlanningException(
+            PathConflictCode,
+            "All deterministic Profile ID suffixes conflict with another entity or unknown bytes.");
+    }
+
+    public ManagedModelPackagePlan AllocateModelPackagePlan(
+        Guid profileId,
+        string displayLabel,
+        ProfileStorageToken profileStorageToken,
+        Guid assetId,
+        AssetStorageToken assetStorageToken,
+        string primaryRelativeComponentPath,
+        Func<ManagedModelPackagePlan, bool> conflicts)
+    {
+        ArgumentNullException.ThrowIfNull(conflicts);
+        foreach (var profileLength in AllowedSuffixLengths)
+        {
+            foreach (var assetLength in AllowedSuffixLengths)
+            {
+                var candidate = PlanModelPackage(
+                    profileId,
+                    displayLabel,
+                    profileStorageToken,
+                    assetId,
+                    assetStorageToken,
+                    primaryRelativeComponentPath,
+                    profileLength,
+                    assetLength);
+                if (!conflicts(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        throw new ManagedPathPlanningException(
+            PathConflictCode,
+            "All deterministic model-package ID suffixes conflict with another entity or unknown bytes.");
+    }
+
+    public ManagedHeroPathPlan AllocateHeroPlan(
+        Guid profileId,
+        string displayLabel,
+        ProfileStorageToken profileStorageToken,
+        Guid assetId,
+        ReadOnlySpan<byte> appearanceHash,
+        HeroMaterializationKind kind,
+        Func<ManagedHeroPathPlan, bool> conflicts)
+    {
+        ArgumentNullException.ThrowIfNull(conflicts);
+        foreach (var profileLength in AllowedSuffixLengths)
+        {
+            foreach (var assetLength in AllowedSuffixLengths)
+            {
+                foreach (var appearanceLength in AllowedSuffixLengths)
+                {
+                    if (appearanceHash.Length < appearanceLength / 2)
+                    {
+                        continue;
+                    }
+
+                    var candidate = PlanHero(
+                        profileId,
+                        displayLabel,
+                        profileStorageToken,
+                        assetId,
+                        appearanceHash,
+                        kind,
+                        profileLength,
+                        assetLength,
+                        appearanceLength);
+                    if (!conflicts(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+        }
+
+        throw new ManagedPathPlanningException(
+            PathConflictCode,
+            "All deterministic Hero identity suffixes conflict with another entity or unknown bytes.");
+    }
+
     /// <summary>
     /// Selects the first nonconflicting deterministic ID suffix. The predicate must return true
     /// only when the candidate is owned by another entity or unknown bytes.

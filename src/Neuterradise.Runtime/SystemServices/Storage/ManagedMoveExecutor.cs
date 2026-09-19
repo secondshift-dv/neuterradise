@@ -153,11 +153,10 @@ public sealed class ManagedMoveExecutor
         var targetExists = File.Exists(targetPath);
         if (targetExists)
         {
-            if (sourceExists)
-            {
-                return new StorageOperationResult(StorageOperationStatus.UnexpectedTarget);
-            }
-
+            // X09: the persisted path/operation authority already proved that this target belongs
+            // to this Asset. A crash can leave both source and fully-published target present while
+            // the durable placement checkpoint is behind. Verify bytes and converge instead of
+            // treating that idempotent replay state as a collision.
             var existingVerification = await _verifier.VerifyAsync(
                     targetPath,
                     plan.ExpectedByteLength,
@@ -425,7 +424,35 @@ public sealed class ManagedMoveExecutor
 
         if (File.Exists(targetPath))
         {
-            return new StorageOperationResult(StorageOperationStatus.UnexpectedTarget);
+            var racedVerification = await _verifier.VerifyAsync(
+                    targetPath,
+                    plan.ExpectedByteLength,
+                    plan.ExpectedSha256,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!racedVerification.IsMatch)
+            {
+                return MapTargetVerification(racedVerification);
+            }
+
+            try
+            {
+                if (File.Exists(stagingPath))
+                {
+                    File.Delete(stagingPath);
+                }
+            }
+            catch (IOException)
+            {
+                // The authoritative target already converged. A sibling operation-owned partial
+                // can be recovered/cleaned on the next pass without invalidating the target.
+            }
+
+            await _assetWrites.CheckpointCrossVolumePlacementAsync(plan, cancellationToken)
+                .ConfigureAwait(false);
+            return new StorageOperationResult(
+                StorageOperationStatus.AlreadyCompleted,
+                racedVerification.Status);
         }
 
         try

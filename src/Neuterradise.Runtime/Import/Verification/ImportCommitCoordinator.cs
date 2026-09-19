@@ -514,142 +514,212 @@ public sealed class ImportCommitCoordinator
         CommitState state,
         CancellationToken cancellationToken)
     {
-        if (state.DestinationProfileId is not null
-            && !string.IsNullOrWhiteSpace(state.DestinationProfileToken))
-        {
-            return;
-        }
-
         var profileOps = new ProfileOperations(_catalog);
         var profileWrites = _catalog.ProfileWrites;
 
-        switch (draft.Destination.Kind)
+        if (state.DestinationProfileId is null
+            || string.IsNullOrWhiteSpace(state.DestinationProfileToken))
         {
-            case DestinationKind.ExistingNormal:
+            switch (draft.Destination.Kind)
             {
-                var profileId = state.DestinationProfileId ?? draft.Destination.ProfileId
-                    ?? throw new InvalidOperationException("Existing NORMAL destination without a ProfileId.");
-                state.DestinationProfileId = profileId;
-                state.DestinationDisplayLabel = await ReadProfileLabelAsync(profileId, cancellationToken).ConfigureAwait(false);
-                state.DestinationProfileToken = await profileWrites.AssignStorageTokenAsync(
-                    profileId, _tokenAllocator.CreateProfileCandidateProvider(profileId), cancellationToken).ConfigureAwait(false);
-                break;
-            }
-
-            case DestinationKind.SystemUnknown:
-            {
-                var profileId = state.DestinationProfileId ?? Guid.NewGuid();
-                if (state.DestinationProfileId is null)
+                case DestinationKind.ExistingNormal:
                 {
+                    var profileId = state.DestinationProfileId ?? draft.Destination.ProfileId
+                        ?? throw new InvalidOperationException("Existing NORMAL destination without a ProfileId.");
                     state.DestinationProfileId = profileId;
-                    state.DestinationProfileCreated = true;
-                    await _catalog.ImportWrites.AdvanceCommitCheckpointAsync(
-                        unitId,
-                        state.OperationId,
-                        state.Checkpoint,
-                        state.ToJson(),
-                        cancellationToken).ConfigureAwait(false);
+                    state.DestinationDisplayLabel = await ReadProfileLabelAsync(profileId, cancellationToken).ConfigureAwait(false);
+                    state.DestinationProfileToken = await profileWrites.AssignStorageTokenAsync(
+                        profileId, _tokenAllocator.CreateProfileCandidateProvider(profileId), cancellationToken).ConfigureAwait(false);
+                    break;
                 }
 
-                var created = await profileOps.CreateUnknownProfileAsync(
-                    new CreateUnknownProfileCommand(profileId), cancellationToken).ConfigureAwait(false);
-                state.DestinationProfileCreated = true;
-                state.DestinationDisplayLabel = $"Unknown {ReadUnknownSequenceOrDefault(created)}";
-                state.DestinationProfileToken = await profileWrites.AssignStorageTokenAsync(
-                    profileId, _tokenAllocator.CreateProfileCandidateProvider(profileId), cancellationToken).ConfigureAwait(false);
-                break;
-            }
-
-            default:
-            {
-                var newProfile = draft.Destination.NewProfile
-                    ?? throw new InvalidOperationException("New NORMAL destination without a NewProfileDraft.");
-                var profileId = state.DestinationProfileId ?? Guid.NewGuid();
-                var identityId = state.DestinationIdentityId ?? Guid.NewGuid();
-                if (state.DestinationProfileId is null || state.DestinationIdentityId is null)
+                case DestinationKind.SystemUnknown:
                 {
-                    state.DestinationProfileId = profileId;
-                    state.DestinationIdentityId = identityId;
+                    var profileId = state.DestinationProfileId ?? Guid.NewGuid();
+                    if (state.DestinationProfileId is null)
+                    {
+                        state.DestinationProfileId = profileId;
+                        state.DestinationProfileCreated = true;
+                        await _catalog.ImportWrites.AdvanceCommitCheckpointAsync(
+                            unitId,
+                            state.OperationId,
+                            state.Checkpoint,
+                            state.ToJson(),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+
+                    var created = await profileOps.CreateUnknownProfileAsync(
+                        new CreateUnknownProfileCommand(profileId), cancellationToken).ConfigureAwait(false);
                     state.DestinationProfileCreated = true;
-                    await _catalog.ImportWrites.AdvanceCommitCheckpointAsync(
-                        unitId,
-                        state.OperationId,
-                        state.Checkpoint,
-                        state.ToJson(),
-                        cancellationToken).ConfigureAwait(false);
+                    state.DestinationDisplayLabel = $"Unknown {ReadUnknownSequenceOrDefault(created)}";
+                    state.DestinationProfileToken = await profileWrites.AssignStorageTokenAsync(
+                        profileId, _tokenAllocator.CreateProfileCandidateProvider(profileId), cancellationToken).ConfigureAwait(false);
+                    break;
                 }
 
-                await profileOps.CreateNormalProfileAsync(
-                    new CreateNormalProfileCommand(profileId, newProfile.DisplayName, identityId, Visibility: "DRAFT"), cancellationToken).ConfigureAwait(false);
+                default:
+                {
+                    var newProfile = draft.Destination.NewProfile
+                        ?? throw new InvalidOperationException("New NORMAL destination without a NewProfileDraft.");
+                    var profileId = state.DestinationProfileId ?? Guid.NewGuid();
+                    var identityId = state.DestinationIdentityId ?? Guid.NewGuid();
+                    if (state.DestinationProfileId is null || state.DestinationIdentityId is null)
+                    {
+                        state.DestinationProfileId = profileId;
+                        state.DestinationIdentityId = identityId;
+                        state.DestinationProfileCreated = true;
+                        await _catalog.ImportWrites.AdvanceCommitCheckpointAsync(
+                            unitId,
+                            state.OperationId,
+                            state.Checkpoint,
+                            state.ToJson(),
+                            cancellationToken).ConfigureAwait(false);
+                    }
 
-                // Section 10: everything the user chose during import has to actually land on the
-                // Profile. Creation only records the name, so the rest is applied here, in the same
-                // commit, before any media is placed.
-                await ApplyNewProfileMetadataAsync(profileOps, profileId, newProfile, cancellationToken)
-                    .ConfigureAwait(false);
+                    await profileOps.CreateNormalProfileAsync(
+                        new CreateNormalProfileCommand(profileId, newProfile.DisplayName, identityId, Visibility: "DRAFT"),
+                        cancellationToken).ConfigureAwait(false);
 
-                state.DestinationProfileCreated = true;
-                state.DestinationDisplayLabel = newProfile.DisplayName;
-                state.DestinationProfileToken = await profileWrites.AssignStorageTokenAsync(
-                    profileId, _tokenAllocator.CreateProfileCandidateProvider(profileId), cancellationToken).ConfigureAwait(false);
-                break;
+                    await ApplyNewProfileMetadataAsync(profileOps, profileId, newProfile, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    state.DestinationProfileCreated = true;
+                    state.DestinationDisplayLabel = newProfile.DisplayName;
+                    state.DestinationProfileToken = await profileWrites.AssignStorageTokenAsync(
+                        profileId, _tokenAllocator.CreateProfileCandidateProvider(profileId), cancellationToken).ConfigureAwait(false);
+                    break;
+                }
             }
         }
 
-        await SetUnitDestinationProfileAsync(unitId, draft.Destination.Kind, state.DestinationProfileId!.Value, cancellationToken)
+        state.DestinationDisplayLabel ??= await ReadProfileLabelAsync(
+            state.DestinationProfileId!.Value,
+            cancellationToken).ConfigureAwait(false);
+
+        await SetUnitDestinationProfileAsync(
+                unitId,
+                draft.Destination.Kind,
+                state.DestinationProfileId.Value,
+                cancellationToken)
             .ConfigureAwait(false);
 
-        // Provision the canonical Profile folder on disk before any media placement.
-        // This ensures the folder is persisted and the manifest is written as part of Stage 1,
-        // not as a side effect of the first ManagedMoveExecutor copy.
-        await ProvisionProfileFolderAsync(state, draft.Destination.Kind, cancellationToken)
+        await EnsureProfileFolderProvisionedAsync(
+                unitId,
+                state,
+                draft.Destination.Kind,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Provisions the canonical Profile folder on disk and writes the profile.json manifest.
-    /// Called after the storage token is assigned so the folder path is deterministic.
-    /// A provisioning failure prevents Stage 1 completion with a recoverable blocker
-    /// so the import can be retried once the filesystem issue is resolved.
-    /// </summary>
-    private async Task ProvisionProfileFolderAsync(
+    private async Task EnsureProfileFolderProvisionedAsync(
+        Guid unitId,
         CommitState state,
         DestinationKind? destinationKind,
         CancellationToken cancellationToken)
     {
-        var profileId = state.DestinationProfileId!.Value;
-        var profileToken = new ProfileStorageToken(state.DestinationProfileToken!);
+        var profileId = state.DestinationProfileId
+            ?? throw new InvalidOperationException("Destination provisioning has no Profile id.");
+        var profileToken = new ProfileStorageToken(
+            state.DestinationProfileToken
+            ?? throw new InvalidOperationException("Destination provisioning has no Profile storage token."));
         var displayLabel = state.DestinationDisplayLabel ?? "Profile";
 
-        var plan = _pathPlanner.PlanProfile(profileId, displayLabel, profileToken);
-        var absoluteFolder = _vaultPaths.ResolveVaultRelativePath(plan.ProfileFolderRelativePath);
-
-        Directory.CreateDirectory(absoluteFolder);
-
-        var profileKind = destinationKind switch
+        if (string.IsNullOrWhiteSpace(state.DestinationProfileFolderRelativePath))
         {
-            DestinationKind.SystemUnknown => ProfileKind.Unknown,
-            _ => ProfileKind.Normal,
-        };
+            var alreadyPersisted = await ReadPersistedProfileFolderAsync(profileId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(alreadyPersisted))
+            {
+                state.DestinationProfileFolderRelativePath = alreadyPersisted;
+            }
+            else
+            {
+                var occupied = await ReadOccupiedProfileFoldersAsync(profileId, cancellationToken)
+                    .ConfigureAwait(false);
+                var plan = _pathPlanner.AllocateProfilePlan(
+                    profileId,
+                    displayLabel,
+                    profileToken,
+                    candidate =>
+                    {
+                        var relative = candidate.ProfileFolderRelativePath.Replace('\\', '/');
+                        if (occupied.Contains(relative))
+                        {
+                            return true;
+                        }
 
+                        var absolute = _vaultPaths.ResolveVaultRelativePath(relative);
+                        return Directory.Exists(absolute);
+                    });
+                state.DestinationProfileFolderRelativePath = plan.ProfileFolderRelativePath;
+            }
+        }
+
+        if (!state.DestinationProvisioningIntentPersisted)
+        {
+            state.DestinationProvisioningIntentPersisted = true;
+            await _catalog.ImportWrites.AdvanceCommitCheckpointAsync(
+                    unitId,
+                    state.OperationId,
+                    state.Checkpoint,
+                    state.ToJson(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var folderRelative = state.DestinationProfileFolderRelativePath!;
+        var absoluteFolder = _vaultPaths.ResolveVaultRelativePath(folderRelative);
+
+        if (Directory.Exists(absoluteFolder))
+        {
+            var inspection = ProfileManifestWriter.InspectManifest(absoluteFolder);
+            if (inspection.Status == ManifestStatus.Valid
+                && inspection.Manifest is not null
+                && inspection.Manifest.ProfileId != profileId)
+            {
+                throw new IOException("The persisted Profile provisioning target belongs to another Profile.");
+            }
+        }
+        else
+        {
+            Directory.CreateDirectory(absoluteFolder);
+        }
+
+        var profileKind = destinationKind == DestinationKind.SystemUnknown
+            ? ProfileKind.Unknown
+            : ProfileKind.Normal;
         var manifest = ProfileManifestWriter.CreateManifest(
             profileId,
             profileKind,
             displayLabel,
-            Path.GetFileName(plan.ProfileFolderRelativePath),
+            Path.GetFileName(folderRelative),
             state.DestinationIdentityId,
             CoverAssetId: null,
             BannerAssetId: null,
             _timeProvider.GetUtcNow());
 
         var writer = new ProfileManifestWriter(_vaultPaths);
-        await writer.WriteManifestAsync(absoluteFolder, manifest, state.OperationId, cancellationToken)
+        await writer.WriteManifestAsync(
+                absoluteFolder,
+                manifest,
+                state.OperationId,
+                cancellationToken)
             .ConfigureAwait(false);
 
-        // Persist the canonical folder path on the profile record so consumers
-        // (Explorer, health, repair) can resolve it without recomputing.
-        await PersistProfileFolderPathAsync(profileId, plan.ProfileFolderRelativePath, cancellationToken)
+        await PersistProfileFolderPathAsync(profileId, folderRelative, cancellationToken)
             .ConfigureAwait(false);
+
+        if (!state.DestinationProvisioningCompleted)
+        {
+            state.DestinationProvisioningCompleted = true;
+            await _catalog.ImportWrites.AdvanceCommitCheckpointAsync(
+                    unitId,
+                    state.OperationId,
+                    state.Checkpoint,
+                    state.ToJson(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -837,13 +907,25 @@ public sealed class ImportCommitCoordinator
         else if (mediaType == MediaType.Model && isMultiFile)
         {
             var primaryComp = components.FirstOrDefault(c => c.ComponentRole == ComponentRole.Primary) ?? components[0];
-            var pkgPlan = _pathPlanner.PlanModelPackage(
+            var pkgPlan = _pathPlanner.AllocateModelPackagePlan(
                 destinationProfileId,
                 state.DestinationDisplayLabel ?? "Profile",
                 new ProfileStorageToken(state.DestinationProfileToken!),
                 assetId,
                 new AssetStorageToken(assetToken),
-                primaryComp.ComponentRelativePath);
+                primaryComp.ComponentRelativePath,
+                candidate =>
+                {
+                    var primary = candidate.PrimaryManagedRelativePath.Replace('\\', '/');
+                    if (occupiedTargets.Contains(primary))
+                    {
+                        return true;
+                    }
+
+                    var packageDirectory = _vaultPaths.ResolveVaultRelativePath(
+                        candidate.PackageDirectoryRelativePath);
+                    return Directory.Exists(packageDirectory);
+                });
 
             relativeFolder = pkgPlan.PackageDirectoryRelativePath;
             plannedFileName = pkgPlan.PrimaryFileName;
@@ -982,6 +1064,43 @@ public sealed class ImportCommitCoordinator
         }
 
         return targets;
+    }
+
+    private async Task<string?> ReadPersistedProfileFolderAsync(Guid profileId, CancellationToken ct)
+    {
+        await using var connection = await _catalog.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT current_managed_relative_path FROM profiles WHERE profile_id = $id;";
+        command.Parameters.AddWithValue("$id", DbGuid.Format(profileId));
+        return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+    }
+
+    private async Task<HashSet<string>> ReadOccupiedProfileFoldersAsync(Guid profileId, CancellationToken ct)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var connection = await _catalog.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT current_managed_relative_path
+            FROM profiles
+            WHERE profile_id <> $id
+              AND current_managed_relative_path IS NOT NULL
+            UNION
+            SELECT target_managed_relative_path
+            FROM profiles
+            WHERE profile_id <> $id
+              AND target_managed_relative_path IS NOT NULL;
+            """;
+        command.Parameters.AddWithValue("$id", DbGuid.Format(profileId));
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            paths.Add(reader.GetString(0).Replace('\\', '/'));
+        }
+
+        return paths;
     }
 
     private async Task<(string Sha256, long ByteLength)> ReadCandidateFingerprintAsync(Guid assetId, CancellationToken ct)
@@ -1133,6 +1252,12 @@ public sealed class ImportCommitCoordinator
         public string? DestinationDisplayLabel { get; set; }
 
         public string? DestinationProfileToken { get; set; }
+
+        public string? DestinationProfileFolderRelativePath { get; set; }
+
+        public bool DestinationProvisioningIntentPersisted { get; set; }
+
+        public bool DestinationProvisioningCompleted { get; set; }
 
         public Dictionary<Guid, bool> SameVolumeByItem { get; init; } = [];
 
