@@ -100,6 +100,19 @@ public sealed class PurgeExecutor
                     "The entity is no longer in the inactive state required for Purge.");
             }
 
+            if (expectedEntityType == PurgeEntityType.Profile)
+            {
+                var assignmentBlocker = await ReadProfileAssignmentPurgeBlockerAsync(
+                        connection, transaction: null, trashEntry.EntityId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (assignmentBlocker is not null)
+                {
+                    return OperationResult<PurgePlan>.Conflict(
+                        OperationErrorCode.PurgeDependencyBlocked,
+                        assignmentBlocker);
+                }
+            }
+
             if (await CountBlockingDependenciesAsync(
                     connection, transaction: null, expectedEntityType, trashEntry.EntityId, cancellationToken)
                 .ConfigureAwait(false) != 0)
@@ -379,6 +392,19 @@ public sealed class PurgeExecutor
                 "The entity changed after this Purge was prepared. Prepare a new authorization.");
         }
 
+        if (plan.EntityType == PurgeEntityType.Profile)
+        {
+            var assignmentBlocker = await ReadProfileAssignmentPurgeBlockerAsync(
+                    connection, transaction, plan.EntityId, cancellationToken)
+                .ConfigureAwait(false);
+            if (assignmentBlocker is not null)
+            {
+                return OperationResult<PurgeOutcome>.Conflict(
+                    OperationErrorCode.PurgeDependencyBlocked,
+                    assignmentBlocker);
+            }
+        }
+
         if (await CountBlockingDependenciesAsync(
                 connection, transaction, plan.EntityType, plan.EntityId, cancellationToken)
             .ConfigureAwait(false) != 0)
@@ -586,6 +612,51 @@ public sealed class PurgeExecutor
         command.Parameters.AddWithValue("$id", DbGuid.Format(entityId));
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return value is null or DBNull ? null : Convert.ToInt64(value);
+    }
+
+    private static async Task<string?> ReadProfileAssignmentPurgeBlockerAsync(
+        SqliteConnection connection,
+        CatalogTransaction? transaction,
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(
+            connection,
+            transaction,
+            """
+            SELECT
+                SUM(CASE WHEN state = 'PENDING' AND candidate_profile_id = $id THEN 1 ELSE 0 END),
+                SUM(CASE WHEN state = 'ACCEPTED' AND decided_profile_id = $id THEN 1 ELSE 0 END),
+                SUM(CASE WHEN state IN ('ACCEPTED','KEPT_UNKNOWN') AND candidate_profile_id = $id THEN 1 ELSE 0 END)
+            FROM import_assignment_clusters
+            WHERE candidate_profile_id = $id OR decided_profile_id = $id;
+            """);
+        command.Parameters.AddWithValue("$id", DbGuid.Format(profileId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var pendingCandidates = reader.IsDBNull(0) ? 0L : reader.GetInt64(0);
+        var acceptedDecisions = reader.IsDBNull(1) ? 0L : reader.GetInt64(1);
+        var terminalCandidates = reader.IsDBNull(2) ? 0L : reader.GetInt64(2);
+        if (pendingCandidates == 0 && acceptedDecisions == 0 && terminalCandidates == 0)
+        {
+            return null;
+        }
+
+        if (acceptedDecisions > 0)
+        {
+            return "Purge is intentionally blocked because an ACCEPTED import-assignment decision still names this Profile. The durable decision is historical authority and is never nulled implicitly.";
+        }
+
+        if (pendingCandidates > 0)
+        {
+            return "Purge is blocked while pending import-assignment evidence still proposes this Profile. Resolve or recompute those assignment groups before Purge.";
+        }
+
+        return "Purge is intentionally blocked because terminal import-assignment evidence still records this Profile as a historical candidate. That history is retained rather than silently rewritten by Purge.";
     }
 
     private static async Task<long> CountBlockingDependenciesAsync(

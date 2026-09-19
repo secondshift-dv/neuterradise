@@ -924,7 +924,7 @@ public sealed class ManagedMoveExecutor
             CombineRelative(request.TargetProfileRelativePath, ProfileManifestWriter.ManifestFileName),
             VaultPathArea.Profiles,
             cleanupSourceDirectory: true,
-            validateManifestIdentity: false,
+            validateManifestIdentity: true,
             cancellationToken);
     }
 

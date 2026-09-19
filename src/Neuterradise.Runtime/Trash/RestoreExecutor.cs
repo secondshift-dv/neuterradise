@@ -295,15 +295,26 @@ public sealed class RestoreExecutor
 
         if (entry.State == TrashEntryState.Restored && !profile.IsTrashed)
         {
-            var prior = OperationResult<ProfileRestoreOutcome>.Success(
+            return OperationResult<ProfileRestoreOutcome>.Success(
                 new ProfileRestoreOutcome(trashEntryId, profile.ProfileId, profile.RowVersion),
                 plan.OperationId);
-            return await RefreshManifestAfterRestoreAsync(
-                    profile.ProfileId, prior, plan.OperationId, cancellationToken)
+        }
+
+        if (entry.State == TrashEntryState.RestoreFinalizing && !profile.IsTrashed)
+        {
+            var committed = OperationResult<ProfileRestoreOutcome>.Success(
+                new ProfileRestoreOutcome(trashEntryId, profile.ProfileId, profile.RowVersion),
+                plan.OperationId);
+            return await FinalizeProfileRestoreAsync(
+                    entry,
+                    profile.ProfileId,
+                    committed,
+                    plan.OperationId,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        if (entry.State != TrashEntryState.InTrash)
+        if (entry.State is not (TrashEntryState.InTrash or TrashEntryState.RestoreExecuting))
         {
             return OperationResult<ProfileRestoreOutcome>.Conflict(
                 OperationErrorCode.TrashPlanStale,
@@ -325,7 +336,7 @@ public sealed class RestoreExecutor
         }
 
         var recoveryRelativePath = entry.RecoveryRelativePath ?? $"_trash/profiles/{profile.ProfileId:D}";
-        if (plan.RestoreCheckpoint is null)
+        if (entry.State == TrashEntryState.InTrash)
         {
             var checkpointed = await PersistProfileRestoreCheckpointAsync(
                     entry,
@@ -340,6 +351,12 @@ public sealed class RestoreExecutor
             }
             plan = checkpointed.Value;
         }
+        else if (plan.RestoreCheckpoint is null)
+        {
+            return OperationResult<ProfileRestoreOutcome>.NeedsAttention(
+                OperationErrorCode.TrashPlanUnreadable,
+                "The Profile Restore is marked as executing but its durable restore checkpoint is missing.");
+        }
 
         var restoreCheckpoint = plan.RestoreCheckpoint!;
         var move = await _moveExecutor.ExecuteProfileManifestRestoreMoveAsync(
@@ -349,7 +366,7 @@ public sealed class RestoreExecutor
                     restoreCheckpoint.TargetManagedRelativePath),
                 cancellationToken)
             .ConfigureAwait(false);
-        if (!move.IsSuccess && move.Status != StorageOperationStatus.SourceMissing)
+        if (!move.IsSuccess)
         {
             return MapProfileManifestRestoreFailure(move);
         }
@@ -370,6 +387,13 @@ public sealed class RestoreExecutor
                 return OperationResult<ProfileRestoreOutcome>.NotFound(
                     OperationErrorCode.TrashEntryNotFound,
                     "That Trash record no longer exists.");
+            }
+
+            if (currentEntry.State != TrashEntryState.RestoreExecuting)
+            {
+                return OperationResult<ProfileRestoreOutcome>.Conflict(
+                    OperationErrorCode.TrashPlanStale,
+                    "The Profile Restore authority changed before its catalog commit.");
             }
 
             if (!currentProfile.IsTrashed || currentProfile.RowVersion != profile.RowVersion)
@@ -463,9 +487,9 @@ public sealed class RestoreExecutor
             await TrashCoordinator.CheckpointTrashEntryAsync(
                 transaction,
                 trashEntryId,
-                TrashEntryState.Restored,
+                TrashEntryState.RestoreFinalizing,
                 restoreCheckpoint.RecoveryRelativePath,
-                completedAtMs: now,
+                completedAtMs: null,
                 currentEntry.RowVersion,
                 now,
                 cancellationToken).ConfigureAwait(false);
@@ -496,8 +520,12 @@ public sealed class RestoreExecutor
                 plan.OperationId);
         }
 
-        return await RefreshManifestAfterRestoreAsync(
-                profile.ProfileId, committed, plan.OperationId, cancellationToken)
+        return await FinalizeProfileRestoreAsync(
+                null,
+                profile.ProfileId,
+                committed,
+                plan.OperationId,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -528,6 +556,14 @@ public sealed class RestoreExecutor
                 "That Profile is no longer in a state that can start Restore.");
         }
 
+        if (await HasActiveProfilePurgeAsync(
+                connection, transaction, currentEntry.EntityId, cancellationToken).ConfigureAwait(false))
+        {
+            return OperationResult<ProfileTrashPlan>.Conflict(
+                OperationErrorCode.PurgeStateInvalid,
+                "This Profile already has an active Purge authorization, so Restore cannot start.");
+        }
+
         var currentPlan = ProfileTrashPlan.FromJson(currentEntry.PlanJson);
         if (currentPlan is null)
         {
@@ -548,7 +584,7 @@ public sealed class RestoreExecutor
         await TrashCoordinator.CheckpointTrashEntryAsync(
             transaction,
             currentEntry.TrashEntryId,
-            TrashEntryState.InTrash,
+            TrashEntryState.RestoreExecuting,
             recoveryRelativePath,
             completedAtMs: null,
             currentEntry.RowVersion,
@@ -557,6 +593,96 @@ public sealed class RestoreExecutor
             checkpointed.ToJson()).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return OperationResult<ProfileTrashPlan>.Success(checkpointed, checkpointed.OperationId);
+    }
+
+    private async Task<OperationResult<ProfileRestoreOutcome>> FinalizeProfileRestoreAsync(
+        TrashEntryRow? knownEntry,
+        Guid profileId,
+        OperationResult<ProfileRestoreOutcome> committed,
+        Guid operationId,
+        CancellationToken cancellationToken)
+    {
+        var refresh = await _manifestWriter.RegenerateManifestAsync(_catalog, profileId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!refresh.IsSuccess)
+        {
+            return OperationResult<ProfileRestoreOutcome>.NeedsAttention(
+                OperationErrorCode.ProfileManifestWriteFailed,
+                "The Profile authority is restored, but profile.json still needs durable recovery. Startup recovery will retry it.",
+                operationId);
+        }
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection, _writeCoordinator);
+
+        var currentEntry = await TrashCoordinator.ReadTrashEntryAsync(
+                connection,
+                transaction,
+                knownEntry?.TrashEntryId ?? committed.Value!.TrashEntryId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (currentEntry is null)
+        {
+            return OperationResult<ProfileRestoreOutcome>.NotFound(
+                OperationErrorCode.TrashEntryNotFound,
+                "That Trash record no longer exists.");
+        }
+
+        if (currentEntry.State == TrashEntryState.Restored)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return committed;
+        }
+
+        if (currentEntry.State != TrashEntryState.RestoreFinalizing)
+        {
+            return OperationResult<ProfileRestoreOutcome>.Conflict(
+                OperationErrorCode.TrashPlanStale,
+                "The Profile Restore authority changed before manifest finalization.");
+        }
+
+        var now = DbTime.Format(_timeProvider.GetUtcNow());
+        await TrashCoordinator.CheckpointTrashEntryAsync(
+            transaction,
+            currentEntry.TrashEntryId,
+            TrashEntryState.Restored,
+            currentEntry.RecoveryRelativePath,
+            completedAtMs: now,
+            currentEntry.RowVersion,
+            now,
+            cancellationToken).ConfigureAwait(false);
+        transaction.QueueInvalidation(new CatalogInvalidation(
+            Guid.Empty,
+            [profileId],
+            CatalogInvalidationDomain.Trash,
+            0));
+        transaction.QueueInvalidation(CatalogInvalidationDomain.Health);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return committed;
+    }
+
+    private static async Task<bool> HasActiveProfilePurgeAsync(
+        Microsoft.Data.Sqlite.SqliteConnection connection,
+        CatalogTransaction? transaction,
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = TrashCoordinator.CreateCommand(
+            connection,
+            transaction,
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM trash_entries
+                WHERE entity_type = 'PURGE_PROFILE'
+                  AND entity_id = $profileId
+                  AND state IN ('PURGE_PENDING','PURGE_EXECUTING','PURGE_RETRY_REQUIRED')
+            );
+            """);
+        command.Parameters.AddWithValue("$profileId", DbGuid.Format(profileId));
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture) == 1;
     }
 
     private Task RefreshRelatedProjectionsAfterRestoreAsync(
@@ -746,6 +872,9 @@ public sealed class RestoreExecutor
     private static OperationResult<ProfileRestoreOutcome> MapProfileManifestRestoreFailure(
         StorageOperationResult result) => result.Status switch
         {
+            StorageOperationStatus.SourceMissing => OperationResult<ProfileRestoreOutcome>.NeedsAttention(
+                OperationErrorCode.CurrentPathMissing,
+                "Neither the Profile recovery manifest nor a verified restored manifest exists, so Restore stopped before changing catalog authority."),
             StorageOperationStatus.SourceChanged or StorageOperationStatus.VerificationFailed =>
                 OperationResult<ProfileRestoreOutcome>.NeedsAttention(
                     OperationErrorCode.TrashPlanUnreadable,

@@ -13,7 +13,11 @@ public sealed class TrashRecovery
         """
         SELECT trash_entry_id, entity_type, entity_id, state, plan_json
         FROM trash_entries
-        WHERE state IN ('EXECUTING', 'IN_TRASH', 'PURGE_EXECUTING', 'PURGE_RETRY_REQUIRED')
+        WHERE state IN (
+            'EXECUTING','IN_TRASH',
+            'RESTORE_EXECUTING','RESTORE_FINALIZING',
+            'PURGE_EXECUTING','PURGE_RETRY_REQUIRED'
+        )
         ORDER BY created_at_ms, trash_entry_id;
         """;
 
@@ -64,6 +68,10 @@ public sealed class TrashRecovery
                 TrashEntryState.InTrash when entry.EntityType == TrashEntityType.Asset =>
                     await ResumeAssetRestoreAsync(entry, cancellationToken).ConfigureAwait(false),
                 TrashEntryState.InTrash when entry.EntityType == TrashEntityType.Profile =>
+                    await ResumeProfileRestoreAsync(entry, cancellationToken).ConfigureAwait(false),
+                TrashEntryState.RestoreExecuting when entry.EntityType == TrashEntityType.Profile =>
+                    await ResumeProfileRestoreAsync(entry, cancellationToken).ConfigureAwait(false),
+                TrashEntryState.RestoreFinalizing when entry.EntityType == TrashEntityType.Profile =>
                     await ResumeProfileRestoreAsync(entry, cancellationToken).ConfigureAwait(false),
                 PurgePlanState.Executing => await ResumePurgeAsync(entry, cancellationToken)
                     .ConfigureAwait(false),

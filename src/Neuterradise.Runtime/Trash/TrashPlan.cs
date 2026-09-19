@@ -15,6 +15,10 @@ public static class TrashEntryState
 
     public const string InTrash = "IN_TRASH";
 
+    public const string RestoreExecuting = "RESTORE_EXECUTING";
+
+    public const string RestoreFinalizing = "RESTORE_FINALIZING";
+
     public const string Restored = "RESTORED";
 }
 
