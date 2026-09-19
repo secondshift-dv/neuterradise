@@ -31,25 +31,37 @@ public sealed class PurgeExecutor
 
     public Task<OperationResult<PurgePlan>> PreparePurgeAssetAsync(
         Guid trashEntryId,
-        CancellationToken cancellationToken = default) =>
-        PrepareAsync(trashEntryId, PurgeEntityType.Asset, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(PreparePurgeAssetAsync));
+        return PrepareAsync(trashEntryId, PurgeEntityType.Asset, cancellationToken);
+    }
 
     public Task<OperationResult<PurgePlan>> PreparePurgeProfileAsync(
         Guid trashEntryId,
-        CancellationToken cancellationToken = default) =>
-        PrepareAsync(trashEntryId, PurgeEntityType.Profile, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(PreparePurgeProfileAsync));
+        return PrepareAsync(trashEntryId, PurgeEntityType.Profile, cancellationToken);
+    }
 
     public Task<OperationResult<PurgeOutcome>> ConfirmPurgeAssetAsync(
         Guid purgePlanId,
         bool irreversibleConfirmation,
-        CancellationToken cancellationToken = default) =>
-        ConfirmAsync(purgePlanId, PurgeEntityType.Asset, irreversibleConfirmation, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ConfirmPurgeAssetAsync));
+        return ConfirmAsync(purgePlanId, PurgeEntityType.Asset, irreversibleConfirmation, cancellationToken);
+    }
 
     public Task<OperationResult<PurgeOutcome>> ConfirmPurgeProfileAsync(
         Guid purgePlanId,
         bool irreversibleConfirmation,
-        CancellationToken cancellationToken = default) =>
-        ConfirmAsync(purgePlanId, PurgeEntityType.Profile, irreversibleConfirmation, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ConfirmPurgeProfileAsync));
+        return ConfirmAsync(purgePlanId, PurgeEntityType.Profile, irreversibleConfirmation, cancellationToken);
+    }
 
     private async Task<OperationResult<PurgePlan>> PrepareAsync(
         Guid trashEntryId,

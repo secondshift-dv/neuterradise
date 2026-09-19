@@ -59,6 +59,7 @@ public sealed class ImportUnitControlAuthority
     /// </summary>
     public async Task<bool> PauseAsync(Guid unitId, CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(PauseAsync));
         if (unitId == Guid.Empty)
         {
             return false;
@@ -92,6 +93,7 @@ public sealed class ImportUnitControlAuthority
     /// </summary>
     public async Task<bool> StartAsync(Guid unitId, CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(StartAsync));
         if (unitId == Guid.Empty)
         {
             return false;
@@ -116,6 +118,7 @@ public sealed class ImportUnitControlAuthority
     /// </summary>
     public async Task PrioritizeAsync(Guid unitId, CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(PrioritizeAsync));
         if (unitId == Guid.Empty)
         {
             return;
@@ -137,6 +140,7 @@ public sealed class ImportUnitControlAuthority
         Guid unitId,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(CancelAsync));
         if (unitId == Guid.Empty)
         {
             return new ImportCancellationOutcome(unitId, ImportCancellationResult.UnitNotFound);

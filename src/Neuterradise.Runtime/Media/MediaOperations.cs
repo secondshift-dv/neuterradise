@@ -15,6 +15,7 @@ namespace Neuterradise.App.Media;
 
 public sealed class MediaOperations
 {
+    private readonly CatalogDb _catalog;
     private readonly CatalogConnectionFactory _connectionFactory;
     private readonly CatalogWriteCoordinator _writeCoordinator;
     private readonly VaultPaths _paths;
@@ -34,6 +35,7 @@ public sealed class MediaOperations
         StructuredDiagnostics? diagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _connectionFactory = catalog.ConnectionFactory;
         _writeCoordinator = catalog.WriteCoordinator;
         _paths = catalog.Paths;
@@ -55,15 +57,16 @@ public sealed class MediaOperations
         public const string ResolveCurrentLocation = "MEDIA_RESOLVE_CURRENT_LOCATION";
     }
 
-    public Task<OperationResult<ChangePrimaryProfileOutcome>> ChangePrimaryProfileAsync(
+    public async Task<OperationResult<ChangePrimaryProfileOutcome>> ChangePrimaryProfileAsync(
         ChangePrimaryProfileRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _execution.RunAsync<ChangePrimaryProfileOutcome>(
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ChangePrimaryProfileAsync));
+        return await _execution.RunAsync<ChangePrimaryProfileOutcome>(
             OperationContext.Start(Kinds.ChangePrimaryProfile, _timeProvider, cancellationToken)
                 with { AssetId = request.AssetId, ProfileId = request.NewOwnerProfileId },
-            context => ChangePrimaryProfileCoreAsync(request, context.CancellationToken));
+            context => ChangePrimaryProfileCoreAsync(request, context.CancellationToken)).ConfigureAwait(false);
     }
 
     private async Task<OperationResult<ChangePrimaryProfileOutcome>> ChangePrimaryProfileCoreAsync(
@@ -375,15 +378,16 @@ public sealed class MediaOperations
         return result;
     }
 
-    public Task<OperationResult<ProfileAssetAssociationOutcome>> AddProfileAssetAssociationAsync(
+    public async Task<OperationResult<ProfileAssetAssociationOutcome>> AddProfileAssetAssociationAsync(
         ProfileAssetAssociationRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _execution.RunAsync<ProfileAssetAssociationOutcome>(
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(AddProfileAssetAssociationAsync));
+        return await _execution.RunAsync<ProfileAssetAssociationOutcome>(
             OperationContext.Start(Kinds.AddProfileAssetAssociation, _timeProvider, cancellationToken)
                 with { AssetId = request.AssetId, ProfileId = request.ProfileId },
-            context => AddProfileAssetAssociationCoreAsync(request, context.CancellationToken));
+            context => AddProfileAssetAssociationCoreAsync(request, context.CancellationToken)).ConfigureAwait(false);
     }
 
     private async Task<OperationResult<ProfileAssetAssociationOutcome>> AddProfileAssetAssociationCoreAsync(
@@ -501,15 +505,16 @@ public sealed class MediaOperations
                 request.ProfileId, request.AssetId, request.RelationType, WasChanged: true));
     }
 
-    public Task<OperationResult<ProfileAssetAssociationOutcome>> RemoveProfileAssetAssociationAsync(
+    public async Task<OperationResult<ProfileAssetAssociationOutcome>> RemoveProfileAssetAssociationAsync(
         ProfileAssetAssociationRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _execution.RunAsync<ProfileAssetAssociationOutcome>(
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RemoveProfileAssetAssociationAsync));
+        return await _execution.RunAsync<ProfileAssetAssociationOutcome>(
             OperationContext.Start(Kinds.RemoveProfileAssetAssociation, _timeProvider, cancellationToken)
                 with { AssetId = request.AssetId, ProfileId = request.ProfileId },
-            context => RemoveProfileAssetAssociationCoreAsync(request, context.CancellationToken));
+            context => RemoveProfileAssetAssociationCoreAsync(request, context.CancellationToken)).ConfigureAwait(false);
     }
 
     private async Task<OperationResult<ProfileAssetAssociationOutcome>> RemoveProfileAssetAssociationCoreAsync(

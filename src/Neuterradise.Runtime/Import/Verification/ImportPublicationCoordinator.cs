@@ -39,6 +39,7 @@ public sealed class ImportPublicationCoordinator
         VerificationDraftV1 finalDraft,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(PublishAsync));
         ArgumentNullException.ThrowIfNull(finalDraft);
         if (unitId == Guid.Empty)
         {

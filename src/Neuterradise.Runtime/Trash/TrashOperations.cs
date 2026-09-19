@@ -48,6 +48,7 @@ public sealed class TrashOperations
         Guid assetId,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(MoveAssetToTrashAsync));
         if (assetId == Guid.Empty)
         {
             return OperationResult<AssetTrashOutcome>.Validation(
@@ -92,6 +93,7 @@ public sealed class TrashOperations
         Guid profileId,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(PrepareTrashProfileAsync));
         if (profileId == Guid.Empty)
         {
             return OperationResult<ProfileTrashPlan>.Validation(
@@ -107,6 +109,7 @@ public sealed class TrashOperations
         IReadOnlyList<ProfileOwnedAssetDisposition> dispositions,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(CommitTrashProfileAsync));
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(dispositions);
 
@@ -118,6 +121,7 @@ public sealed class TrashOperations
         IReadOnlyList<ProfileOwnedAssetDisposition> dispositions,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(CommitTrashProfileAsync));
         if (profileId == Guid.Empty)
         {
             return OperationResult<ProfileTrashOutcome>.Validation(
@@ -166,6 +170,7 @@ public sealed class TrashOperations
         Guid? targetOwnerProfileId = null,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RestoreAssetAsync));
         if (assetOrTrashEntryId == Guid.Empty)
         {
             return OperationResult<AssetRestoreOutcome>.Validation(
@@ -183,6 +188,7 @@ public sealed class TrashOperations
         Guid profileOrTrashEntryId,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RestoreProfileAsync));
         if (profileOrTrashEntryId == Guid.Empty)
         {
             return OperationResult<ProfileRestoreOutcome>.Validation(

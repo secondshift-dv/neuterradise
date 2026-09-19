@@ -25,6 +25,7 @@ public sealed record ImportIntakeResult(
 
 public sealed class ImportIntakeCoordinator
 {
+    private readonly CatalogDb _catalog;
     private readonly ImportAdmissionWrites _admissionWrites;
     private readonly VerificationOperations _verification;
     private readonly VaultPaths _paths;
@@ -33,6 +34,7 @@ public sealed class ImportIntakeCoordinator
     public ImportIntakeCoordinator(CatalogDb catalog, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _paths = catalog.Paths;
         _admissionWrites = new ImportAdmissionWrites(catalog, _timeProvider);
@@ -44,6 +46,7 @@ public sealed class ImportIntakeCoordinator
         Guid? sessionId = null,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(IntakeAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureVaultIsReadyForImport();
 
