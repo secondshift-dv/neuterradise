@@ -136,7 +136,7 @@ public sealed class ImportUnitMutationCoordinator : IDisposable
         _flow.Value = null;
     }
 
-    private sealed class FlowScope
+    internal sealed class FlowScope
     {
         public Dictionary<Guid, int> Depths { get; } = [];
     }
