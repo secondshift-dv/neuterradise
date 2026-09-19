@@ -1,5 +1,19 @@
 # NeuTerradise Agent Instructions
 
+## Audit and remediation authority
+
+`DEEP_AUDIT_FINAL.md` is the canonical audit ledger and remediation specification for the frozen Stage 1–12 baseline.
+
+- Follow the remediation order R0 → R8 defined in Section 22.
+- Finding IDs are immutable. X27–X29 remain RESERVED and must never be repurposed.
+- Do not open Stage 13 for the frozen baseline.
+- A newly discovered manifestation of an existing root cause stays under its existing X finding.
+- Allocate X74+ only for a genuinely distinct root cause outside X01–X73.
+- Before editing for a finding, read its finding body, Section 4B trace target, dependency cluster, and current callers.
+- Do not mark a finding SOURCE-CLOSED until the root cause and required regression guard are committed.
+- Later phase references marked integration/revalidation companion do not authorize duplicate implementation.
+- R8 is executable evidence work and remains subject to the explicit execution restriction below.
+
 Canonical build:
 
 ```powershell
