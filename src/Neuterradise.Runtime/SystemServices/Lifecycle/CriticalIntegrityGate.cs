@@ -27,6 +27,7 @@ public sealed class CriticalIntegrityGate
         await CheckNormalProfilesIdentityAsync(connection, violations, cancellationToken).ConfigureAwait(false);
         await CheckUnknownProfilesIdentityAsync(connection, violations, cancellationToken).ConfigureAwait(false);
         await CheckNonterminalStagingCoherenceAsync(connection, violations, cancellationToken).ConfigureAwait(false);
+        await CheckManagedPathAuthorityAsync(connection, violations, cancellationToken).ConfigureAwait(false);
         await CheckActiveAppearanceReferencesAsync(connection, violations, cancellationToken).ConfigureAwait(false);
         var result = violations.Count == 0 ? CriticalIntegrityResult.Success() : CriticalIntegrityResult.Failure(violations);
         if (!result.Passed)
@@ -77,6 +78,50 @@ public sealed class CriticalIntegrityGate
             UNION ALL SELECT ii.import_item_id FROM import_items ii LEFT JOIN assets a ON ii.candidate_asset_id=a.asset_id WHERE ii.candidate_asset_id IS NOT NULL AND a.asset_id IS NULL;
             """;
         await using var r=await cmd.ExecuteReaderAsync(t).ConfigureAwait(false); while(await r.ReadAsync(t).ConfigureAwait(false)) v.Add(new("STAGING_ORPHANED_REFERENCE","An import item has an orphaned durable reference.","ImportItem",r.GetString(0)));
+    }
+
+    private static async Task CheckManagedPathAuthorityAsync(
+        SqliteConnection c,
+        List<CriticalIntegrityViolation> v,
+        CancellationToken t)
+    {
+        await using (var profiles = c.CreateCommand())
+        {
+            profiles.CommandText =
+                """
+                SELECT profile_id, path_state
+                FROM profiles
+                WHERE path_state IN ('PENDING','NEEDS_ATTENTION');
+                """;
+            await using var reader = await profiles.ExecuteReaderAsync(t).ConfigureAwait(false);
+            while (await reader.ReadAsync(t).ConfigureAwait(false))
+            {
+                v.Add(new CriticalIntegrityViolation(
+                    "UNRESOLVED_PROFILE_PATH_AUTHORITY",
+                    $"Profile managed-path authority remains {reader.GetString(1)} after recovery.",
+                    "Profile",
+                    reader.GetString(0)));
+            }
+        }
+
+        await using (var assets = c.CreateCommand())
+        {
+            assets.CommandText =
+                """
+                SELECT asset_id, path_state
+                FROM assets
+                WHERE path_state IN ('PENDING','NEEDS_ATTENTION');
+                """;
+            await using var reader = await assets.ExecuteReaderAsync(t).ConfigureAwait(false);
+            while (await reader.ReadAsync(t).ConfigureAwait(false))
+            {
+                v.Add(new CriticalIntegrityViolation(
+                    "UNRESOLVED_ASSET_PATH_AUTHORITY",
+                    $"Asset managed-path authority remains {reader.GetString(1)} after recovery.",
+                    "Asset",
+                    reader.GetString(0)));
+            }
+        }
     }
 
     private static async Task CheckActiveAppearanceReferencesAsync(SqliteConnection c,List<CriticalIntegrityViolation> v,CancellationToken t)

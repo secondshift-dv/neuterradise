@@ -60,6 +60,8 @@ public sealed class AppBootstrapper
 
         VaultLock? vaultLock = null;
         BootstrapContext? context = null;
+        var sessionId = Guid.NewGuid();
+        var sessionGeneration = Guid.NewGuid();
         UpdateStateStore? updateStore = null;
         var updateRecoveryResult = UpdateStartupRecoveryResult.NoAction();
         var timings = new List<StartupStageTiming>();
@@ -84,6 +86,21 @@ public sealed class AppBootstrapper
 
             TransitionTo(StartupState.OpeningStorage);
             vaultLock = await VaultLock.AcquireAsync(_paths, cancellationToken).ConfigureAwait(true);
+
+            // X23: acquiring writable Vault authority makes this session UNCLEAN before any catalog
+            // or recovery mutation can begin. Clean is written only by ordered shutdown using the
+            // same SessionId/Generation after every mutation authority has stopped.
+            if (_appState is not null)
+            {
+                _appState.EnsureStructuralDirectories();
+                await new SessionMarkerStore(_appState)
+                    .WriteUncleanAsync(
+                        sessionId,
+                        sessionGeneration,
+                        Array.Empty<Guid>(),
+                        cancellationToken)
+                    .ConfigureAwait(true);
+            }
 
             // Update replacement recovery is reconciled before any catalog mutation-capable operation.
             // HandoffPending is not promoted merely because the application started: filesystem and
@@ -129,7 +146,7 @@ public sealed class AppBootstrapper
             TransitionTo(StartupState.Recovering);
             var recovery = await new RecoveryCoordinator(catalog, _diagnostics).RecoverAsync(cancellationToken)
                 .ConfigureAwait(true);
-            if (recovery.HasFatal)
+            if (recovery.HasFatal || recovery.BlocksWritableStartup)
             {
                 throw new RecoveryFailedException(recovery);
             }
@@ -144,7 +161,15 @@ public sealed class AppBootstrapper
             CompleteStage(StartupStage.RecoveryCompleteToCriticalGateComplete);
 
             TransitionTo(StartupState.Prewarming);
-            context = new BootstrapContext(_paths, vaultLock, catalog, recovery, migration.CurrentVersion, StartupState.Prewarming);
+            context = new BootstrapContext(
+                _paths,
+                vaultLock,
+                catalog,
+                recovery,
+                migration.CurrentVersion,
+                sessionId,
+                sessionGeneration,
+                StartupState.Prewarming);
             vaultLock = null;
 
             if (prewarm is not null)

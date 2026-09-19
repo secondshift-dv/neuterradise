@@ -14,7 +14,8 @@ public sealed class ShutdownCoordinator
     private readonly IReadOnlyList<IAsyncDisposable> _services;
     private readonly List<StartupState> _stateHistory = [StartupState.Ready];
     private readonly AppStatePaths? _appState;
-    private readonly Guid _sessionId = Guid.NewGuid();
+    private readonly Guid _sessionId;
+    private readonly Guid _sessionGeneration;
     private readonly object _shutdownGate = new();
     private Task<ShutdownReport>? _shutdown;
     private int _markerWritten;
@@ -28,6 +29,8 @@ public sealed class ShutdownCoordinator
         _shutdownSchedulerAsync = shutdownSchedulerAsync;
         _services = (services ?? []).ToArray();
         _appState = appState;
+        _sessionId = context.SessionId;
+        _sessionGeneration = context.SessionGeneration;
     }
 
     public StartupState State { get; private set; } = StartupState.Ready;
@@ -194,7 +197,7 @@ public sealed class ShutdownCoordinator
 
         _appState.EnsureStructuralDirectories();
         var store = new SessionMarkerStore(_appState);
-        await store.WriteCleanAsync(_sessionId, Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
+        await store.WriteCleanAsync(_sessionId, _sessionGeneration, cancellationToken).ConfigureAwait(false);
         Interlocked.Exchange(ref _markerWritten, 1);
     }
 

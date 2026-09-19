@@ -14,6 +14,8 @@ public sealed class BootstrapContext : IDisposable, IAsyncDisposable
         CatalogDb catalog,
         RecoveryResult recovery,
         int schemaVersion,
+        Guid sessionId,
+        Guid sessionGeneration,
         StartupState initialState = StartupState.Prewarming)
     {
         Paths = paths ?? throw new ArgumentNullException(nameof(paths));
@@ -21,6 +23,12 @@ public sealed class BootstrapContext : IDisposable, IAsyncDisposable
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         Recovery = recovery ?? throw new ArgumentNullException(nameof(recovery));
         SchemaVersion = schemaVersion;
+        SessionId = sessionId != Guid.Empty
+            ? sessionId
+            : throw new ArgumentException("SessionId cannot be empty.", nameof(sessionId));
+        SessionGeneration = sessionGeneration != Guid.Empty
+            ? sessionGeneration
+            : throw new ArgumentException("SessionGeneration cannot be empty.", nameof(sessionGeneration));
         State = initialState;
     }
 
@@ -35,6 +43,10 @@ public sealed class BootstrapContext : IDisposable, IAsyncDisposable
     public RecoveryResult Recovery { get; }
 
     public int SchemaVersion { get; }
+
+    public Guid SessionId { get; }
+
+    public Guid SessionGeneration { get; }
 
     public void Dispose()
     {
