@@ -8,6 +8,7 @@ namespace Neuterradise.App.SystemServices.Database;
 public sealed class CatalogMutationAdmissionGate
 {
     private readonly object _gate = new();
+    private readonly AsyncLocal<int> _depth = new();
     private bool _accepting = true;
     private int _active;
     private TaskCompletionSource _idle = CompletedSource();
@@ -37,6 +38,13 @@ public sealed class CatalogMutationAdmissionGate
     public Lease Enter(string operation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+
+        if (_depth.Value > 0)
+        {
+            _depth.Value++;
+            return new Lease(this, ownsAdmission: false);
+        }
+
         lock (_gate)
         {
             if (!_accepting)
@@ -50,7 +58,8 @@ public sealed class CatalogMutationAdmissionGate
             }
 
             _active++;
-            return new Lease(this);
+            _depth.Value = 1;
+            return new Lease(this, ownsAdmission: true);
         }
     }
 
@@ -79,8 +88,19 @@ public sealed class CatalogMutationAdmissionGate
             : idle;
     }
 
-    private void Exit()
+    private void Exit(bool ownsAdmission)
     {
+        if (_depth.Value <= 0)
+        {
+            throw new InvalidOperationException("Mutation admission async-flow depth underflow.");
+        }
+
+        _depth.Value--;
+        if (!ownsAdmission)
+        {
+            return;
+        }
+
         lock (_gate)
         {
             if (_active <= 0)
@@ -106,10 +126,15 @@ public sealed class CatalogMutationAdmissionGate
     public sealed class Lease : IDisposable
     {
         private CatalogMutationAdmissionGate? _owner;
+        private readonly bool _ownsAdmission;
 
-        internal Lease(CatalogMutationAdmissionGate owner) => _owner = owner;
+        internal Lease(CatalogMutationAdmissionGate owner, bool ownsAdmission)
+        {
+            _owner = owner;
+            _ownsAdmission = ownsAdmission;
+        }
 
-        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.Exit();
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.Exit(_ownsAdmission);
     }
 }
 
