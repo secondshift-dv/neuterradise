@@ -67,9 +67,10 @@ public sealed class UpdatePackageStager
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var normalized = entry.FullName.Replace('\\', '/');
+                var rawName = entry.FullName.Replace('\\', '/');
+                var isDirectoryEntry = rawName.EndsWith("/", StringComparison.Ordinal);
+                var normalized = isDirectoryEntry ? rawName.TrimEnd('/') : rawName;
                 if (string.IsNullOrWhiteSpace(normalized)
-                    || normalized.EndsWith('/')
                     || Path.IsPathRooted(normalized)
                     || normalized.Contains("../", StringComparison.Ordinal)
                     || normalized.Contains(":", StringComparison.Ordinal)
@@ -80,10 +81,12 @@ public sealed class UpdatePackageStager
                         writtenFiles);
                 }
 
+                // Canonical names intentionally ignore a directory entry's trailing slash so
+                // "a/b/" and "a/b" cannot describe two different archive objects.
                 if (!names.Add(normalized))
                 {
                     return RejectAndCleanup(
-                        "Update archive contains duplicate entries.",
+                        "Update archive contains duplicate canonical entries.",
                         writtenFiles);
                 }
 
@@ -95,6 +98,24 @@ public sealed class UpdatePackageStager
                     return RejectAndCleanup(
                         "Update archive entry exceeds safety bounds.",
                         writtenFiles);
+                }
+
+                if (isDirectoryEntry)
+                {
+                    if (entry.Length != 0)
+                    {
+                        return RejectAndCleanup(
+                            "Update archive directory entry contains file data.",
+                            writtenFiles);
+                    }
+
+                    var directory = ResolveArchiveDestination(staging, normalized, operationId);
+                    Directory.CreateDirectory(directory);
+
+                    // Re-resolve after creation so a concurrently introduced reparse point
+                    // cannot silently convert a valid directory entry into an escape.
+                    _ = ResolveArchiveDestination(staging, normalized, operationId);
+                    continue;
                 }
 
                 total = checked(total + entry.Length);

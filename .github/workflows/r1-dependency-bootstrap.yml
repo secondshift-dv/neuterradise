@@ -1,0 +1,99 @@
+name: R1 Dependency Bootstrap
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/r1-dependency-bootstrap.yml"
+      - "Directory.Build.props"
+      - "scripts/build.ps1"
+      - "release-contract.json"
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}\\.cache\\nuget
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout exact R1 source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install exact .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Generate authentic NuGet lockfiles
+        shell: pwsh
+        run: |
+          dotnet restore ./NeuTerradise.sln --runtime win-x64 --disable-parallel --force-evaluate -p:RestorePackagesWithLockFile=true -p:RestoreLockedMode=false
+          if ($LASTEXITCODE -ne 0) { throw "Lockfile restore failed with exit code $LASTEXITCODE." }
+
+          $projects = @(Get-ChildItem ./src -Filter *.csproj -File -Recurse)
+          $locks = @(Get-ChildItem ./src -Filter packages.lock.json -File -Recurse)
+          if ($locks.Count -ne $projects.Count) {
+            throw "Expected one packages.lock.json per project. Projects=$($projects.Count), lockfiles=$($locks.Count)."
+          }
+
+          foreach ($lock in $locks) {
+            $json = Get-Content -LiteralPath $lock.FullName -Raw | ConvertFrom-Json
+            if ([int]$json.version -lt 1 -or $null -eq $json.dependencies) {
+              throw "Generated lockfile is structurally invalid: $($lock.FullName)"
+            }
+          }
+
+      - name: Publish pinned FFmpeg project mirror
+        shell: pwsh
+        run: |
+          $archiveName = 'ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-8.1.zip'
+          $expectedSha = '9bb4c17bf1e271e7944a61d900716e61c6f6b4ef556544f3907b131cbc0bfd41'
+          $upstream = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-08-23-15/' + $archiveName
+          $tag = 'dependencies-ffmpeg-8.1.2'
+          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
+
+          Invoke-WebRequest -Uri $upstream -OutFile $archivePath -MaximumRedirection 10
+          $actualSha = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not [string]::Equals($actualSha, $expectedSha, [StringComparison]::Ordinal)) {
+            throw "FFmpeg bootstrap SHA mismatch. Expected $expectedSha, got $actualSha."
+          }
+
+          gh release view $tag --repo ${{ github.repository }} *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $archivePath --repo ${{ github.repository }} --clobber
+          }
+          else {
+            gh release create $tag $archivePath --repo ${{ github.repository }} --title 'Pinned FFmpeg build dependency' --notes 'Immutable build dependency mirror for NeuTerradise. Source: BtbN FFmpeg-Builds autobuild-2026-09-08-23-15; SHA-256: 9bb4c17bf1e271e7944a61d900716e61c6f6b4ef556544f3907b131cbc0bfd41.'
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the FFmpeg project mirror failed." }
+
+      - name: Commit generated lockfiles
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          $locks = @(Get-ChildItem ./src -Filter packages.lock.json -File -Recurse)
+          foreach ($lock in $locks) {
+            git add -- $lock.FullName
+            if ($LASTEXITCODE -ne 0) { throw "git add failed for $($lock.FullName)." }
+          }
+
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'LOCKFILES_ALREADY_CURRENT=YES'
+            exit 0
+          }
+
+          git commit -m "R1: lock canonical NuGet dependency graph"
+          if ($LASTEXITCODE -ne 0) { throw "Lockfile commit failed." }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw "Lockfile push failed." }

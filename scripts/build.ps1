@@ -84,7 +84,8 @@ try {
         'restore',
         $SolutionPath,
         '--runtime', $runtimeIdentifier,
-        '--disable-parallel'
+        '--disable-parallel',
+        '--locked-mode'
     )
     if ($Offline) {
         $OfflineSource = Join-Path ([IO.Path]::GetTempPath()) ('neuterradise-offline-nuget-' + [Guid]::NewGuid().ToString('N'))
