@@ -341,7 +341,7 @@ No link may be skipped.
 
 ## X01 — Cover video-frame accepted by appearance rules but rejected by startup integrity
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -413,7 +413,7 @@ Create persisted valid and invalid appearance fixtures, restart through the actu
 
 ## X02 — Updater helper loses manifest/hash authority after handoff
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -481,7 +481,7 @@ Disposable InstallRoot E2E test with deliberate staging mutation between handoff
 
 ## X03 — Packaged profiling model root disagrees with Worker resolver
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -549,7 +549,7 @@ Packaged Worker handshake plus one real YuNet/SFace inference in the packaged la
 
 ## X04 — Profile rename reconciliation obligations lack guaranteed production enqueue
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -601,7 +601,7 @@ End-to-end rename → job → PathReconciler → restart convergence.
 
 ## X05 — OWNER relocation obligations lack guaranteed production enqueue
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -637,9 +637,6 @@ Database OWNER and final managed path must converge after every injected crash b
 
 ---
 
-# 7. Stage 3 — Database / Persistence / Lifecycle Findings
-
-
 ### R1 implementation closure record — 2026-09-19
 
 **Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
@@ -653,6 +650,8 @@ Database OWNER and final managed path must converge after every injected crash b
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** Scheduler/relocation execution remains R8 evidence.
+
+# 7. Stage 3 — Database / Persistence / Lifecycle Findings
 
 ## X06 — Asset Trash fails when APPEARS or MANUAL relations remain
 
@@ -1826,7 +1825,7 @@ No stale route can open detail, overwrite selection, or mutate a new surface.
 
 ## X43 — CI NuGet package-root authority conflicts with package verification
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1867,7 +1866,7 @@ Package/build succeeds from a non-default NuGet root without hidden fallback.
 
 ## X44 — Release/package validation does not share one complete required-member contract
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1900,18 +1899,17 @@ No incomplete package reaches artifact/release acceptance.
 
 ### R1 implementation closure record — 2026-09-19
 
-**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Implementation SHAs:** `f923926a62ac94654b754069d5f9457c38c33d36`, `f35a79d39b9b541fc60662222cccc2c1b73b0804`, `ebdd445359c5d186eee83acff4a52be17a6253a6`  
 **Primary remediation phase:** R1  
-**Changed paths:** `release-contract.json`; `src/Neuterradise.Release.Contracts/Neuterradise.Release.Contracts.csproj`; `src/Neuterradise.Release.Contracts/ReleaseContract.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageValidator.cs`; `src/Neuterradise.Updater/ReplacementEngine.cs`; `scripts/package-win-x64.ps1`; `scripts/build.ps1`; `src/Neuterradise.Runtime/Neuterradise.Runtime.csproj`; `src/Neuterradise.Profiling.Worker/Neuterradise.Profiling.Worker.csproj`; `src/Neuterradise.Updater/Neuterradise.Updater.csproj`; `NeuTerradise.sln`.  
-**Traceability checked:** One release contract → package required-member assertions → release/update manifest membership → runtime package validator → isolated updater helper staged validation → canonical build output check.  
-**Root-cause correction:** App, Worker, Updater, models, media tools, deployment manifests, notices, and unique OpenCvSharp native membership are now defined once in the shared release contract rather than by divergent producer/consumer lists.  
-**Regression guard:** Packaging, canonical build validation, runtime update validation, and helper pre-replacement validation all fail closed against the same contract; the contract is embedded into code and shipped as deployment evidence.  
-**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; package/build/runtime evidence remains R8.  
+**Changed paths:** `release-contract.json`; `scripts/package-win-x64.ps1`; `scripts/build.ps1`; `src/Neuterradise.Release.Contracts/ReleaseContract.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageValidator.cs`; `src/Neuterradise.Updater/ReplacementEngine.cs`; six canonical `packages.lock.json` files.  
+**Traceability checked:** canonical release contract → package producer → release/update manifest membership → runtime package validator → updater staged-copy validator → canonical build output and dependency authority.  
+**Root-cause correction:** The shared release contract now requires the complete mandatory first-party/control launch closure for both app and Worker, including app executable/assembly/deps/runtimeconfig, Runtime, Profiling.Protocol, Release.Contracts, Worker executable/assembly/deps/runtimeconfig, Worker protocol/contracts/OpenCvSharp managed runtime, models, media tools, deployment metadata, updater, and notices. Exact payload membership remains closed by release/update manifests, while the dependency graph is separately locked by X50.  
+**Regression guard:** Removing any contract member causes package/build/runtime/update validation to fail closed; app/Worker project dependency changes also change checked-in NuGet lockfiles and the canonical dependency provenance digest.  
+**Verification result:** SOURCE-TRACE VERIFIED. Contract consumers and generated dependency authority were re-read from `main`; canonical build/package/runtime execution remains R8.  
 **Dependency findings checked:** X02, X03, X43, X49, X50, X57, X59, X60, X65, X71  
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
-**Residual risk/blocker:** Executable package/build validation remains R8 evidence.
-
+**Residual risk/blocker:** Full executable package launchability is R8 evidence, not an R1 source blocker.
 ## X45 — Update trust lacks independent publisher authenticity
 
 **Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
@@ -2036,7 +2034,7 @@ Every corrupt state has a deterministic user/recovery outcome.
 
 ## X49 — MinimumCompatibleVersion is declared but not enforced
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2081,7 +2079,7 @@ Trust decision must fail before staging when compatibility is not satisfied.
 
 ## X50 — Canonical toolchain/dependency graph is not reproducibly locked
 
-**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2108,22 +2106,21 @@ Rebuild the same SHA from a clean environment and compare provenance/package mem
 
 ---
 
-# 15. Stage 10 — Cross-Domain Adversarial Findings
-
-
 ### R1 implementation closure record — 2026-09-19
 
-**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Implementation SHAs:** `f923926a62ac94654b754069d5f9457c38c33d36`, `f35a79d39b9b541fc60662222cccc2c1b73b0804`, `ebdd445359c5d186eee83acff4a52be17a6253a6`  
 **Primary remediation phase:** R1  
-**Changed paths:** `global.json`; `.github/workflows/release.yml`; `scripts/build.ps1`  
-**Traceability checked:** global SDK resolver → Actions setup-dotnet → canonical build SDK assertion → project/MSBuild declarations → build provenance dependency-declaration digest. Repository history was also checked for existing `packages.lock.json` authority and none exists.  
-**Root-cause correction:** Exact .NET SDK 10.0.401 with `rollForward=disable` is now a single fail-closed authority, and build provenance records both the resolved SDK and a digest over dependency declarations. The transitive NuGet dependency graph is not yet locked.  
-**Regression guard:** Canonical build refuses any SDK other than 10.0.401 and records dependency-declaration provenance; a true NuGet locked-mode guard cannot be enabled until trustworthy lockfiles are generated from an exact restore.  
-**Verification result:** PENDING-EXECUTION-AUTHORIZATION — attempted disposable lock generation was not possible because the available execution environment has no `dotnet` and no DNS/network; no lockfile was fabricated.  
+**Changed paths:** `global.json`; `Directory.Build.props`; `scripts/build.ps1`; `.github/workflows/release.yml`; `.github/workflows/security.yml`; six project-local `packages.lock.json` files.  
+**Traceability checked:** exact SDK resolver → Actions setup-dotnet → one lockfile per solution project → canonical locked restore → release cache key → build provenance.  
+**Root-cause correction:** .NET SDK is pinned to 10.0.401 with `rollForward=disable`; all six projects now have authentic NuGet lockfiles generated by SDK 10.0.401 on GitHub Actions; canonical restore runs `--locked-mode`; `RestorePackagesWithLockFile` and `RestoreLockedMode` are repository-wide authorities.  
+**Regression guard:** Canonical restore fails on dependency drift, release cache identity includes lockfiles, build refuses a non-10.0.401 SDK, and build provenance records both the full dependency-authority digest and a dedicated aggregate `dependencyLockSha256`.  
+**Verification result:** GitHub Actions run `35443876832` SUCCESS generated six lockfiles from the exact SDK and committed them as `f35a79d39b9b541fc60662222cccc2c1b73b0804`. Each project has one schema-v1 lockfile. Canonical Release build remains R8.  
 **Dependency findings checked:** X43, X44, X46, X56  
-**Source status:** OPEN-IMPLEMENTATION  
+**Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
-**Residual risk/blocker:** Generate and commit authentic NuGet `packages.lock.json` files from exact SDK 10.0.401, then enforce locked restore in the canonical path. Until that is done, X50 remains open.
+**Residual risk/blocker:** No R1 source blocker; reproducible build equivalence remains R8 verification.
+
+# 15. Stage 10 — Cross-Domain Adversarial Findings
 
 ## X51 — Final-attempt crash does not leave the current JobRecovery path permanently RUNNABLE
 
@@ -2569,7 +2566,7 @@ The final coverage certification compared the canonical X ledger against the com
 
 ## X64 — Update ZIP extraction safety is not explicit enough for static security proof
 
-**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2617,18 +2614,17 @@ The security query must no longer report the extraction sink, and all malicious 
 
 ### R1 implementation closure record — 2026-09-19
 
-**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Implementation SHA:** `f923926a62ac94654b754069d5f9457c38c33d36`  
 **Primary remediation phase:** R1  
 **Changed paths:** `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs`  
-**Traceability checked:** ZIP entry name → normalized segment validation → canonical `Path.GetFullPath` destination → explicit staging-root prefix proof → shared `RootPathRules.ResolveContainedPath` reparse-aware proof → parent creation → repeated immediate pre-write proof.  
-**Root-cause correction:** Extraction containment is now explicit in the stager itself instead of relying only on a shared helper whose safety properties were opaque to static analysis.  
-**Regression guard:** Rooted, empty, dot/dot-dot, colon/NUL, containment disagreement, reparse-point, duplicate, oversized, and compression-ratio violations fail closed before file creation; containment is recomputed after parent creation immediately before mutation.  
-**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; exact packaged ZIP behavior remains R8/X65.  
+**Traceability checked:** ZIP entry name → file/directory classification → canonical segment normalization → duplicate canonical-name authority → full-path staging containment → shared reparse-aware authority → immediate post-directory/pre-file mutation re-resolution.  
+**Root-cause correction:** Safe directory entries are now accepted instead of being rejected merely for a trailing slash. Directory entries must contain zero file data, use the same canonical containment/reparse authority as files, and are re-resolved after creation. Files retain the immediate pre-write containment proof.  
+**Regression guard:** rooted/traversal/drive/NUL/empty-segment entries, canonical file-directory collisions, data-bearing directory entries, containment disagreement, reparse redirection, oversized entries, and compression bombs fail closed; valid directory entries and valid nested files are permitted by the source contract.  
+**Verification result:** SOURCE-TRACE VERIFIED; Security Scan for the R1 source change is tracked separately. Exact malicious/valid ZIP fixture execution remains X65/R8.  
 **Dependency findings checked:** X02, X44, X60, X65  
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
-**Residual risk/blocker:** X65 exact ZIP-artifact execution evidence remains separately open in R8.
-
+**Residual risk/blocker:** X65 executable ZIP matrix remains R8 evidence, not an R1 source blocker.
 ## X65 — Canonical ZIP directory-entry incompatibility requires executable artifact evidence
 
 **Status:** EXECUTION-EVIDENCE-GAP
@@ -2892,7 +2888,7 @@ No UI-thread sleep occurs and the UI remains responsive for the full retry windo
 
 ## X71 — FFmpeg build artifact availability depends on an external upstream release
 
-**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2932,18 +2928,17 @@ The exact pinned FFmpeg bytes remain reproducibly obtainable from an authority c
 
 ### R1 implementation closure record — 2026-09-19
 
-**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Implementation SHAs:** `f923926a62ac94654b754069d5f9457c38c33d36`, `f35a79d39b9b541fc60662222cccc2c1b73b0804`  
 **Primary remediation phase:** R1  
-**Changed paths:** `release-contract.json`; `scripts/package-win-x64.ps1`  
-**Traceability checked:** pinned BtbN archive identity/SHA → project-controlled mirror contract → cache identity/hash validation → upstream fallback → extracted ffmpeg/ffprobe source revision validation → deployment provenance. GitHub Releases for this repository were checked and are currently empty.  
-**Root-cause correction:** Packaging now has a project-controlled mirror authority and tries it first with the same pinned SHA-256; the original exact upstream source remains a fallback. The declared mirror asset does not yet exist, so durable independent availability is not yet established.  
-**Regression guard:** Both mirror and upstream cache entries are hash-bound to the exact pinned archive; extracted ffmpeg/ffprobe must report the expected source revision before packaging.  
-**Verification result:** PENDING-EXTERNAL-ARTIFACT — the current GitHub connector exposes no create-release/upload-release-asset operation, so the pinned archive cannot be published to the declared project mirror from this session.  
+**Changed paths:** `release-contract.json`; `scripts/package-win-x64.ps1`; project GitHub Release `dependencies-ffmpeg-8.1.2`.  
+**Traceability checked:** pinned upstream tag/archive/SHA → project-controlled mirror URL → GitHub Release asset digest → cache hash authority → upstream fallback → extracted ffmpeg/ffprobe source-revision validation → deployment provenance.  
+**Root-cause correction:** The exact pinned BtbN FFmpeg archive is now durably mirrored under the project release authority. Packaging remains mirror-first and accepts neither mirror nor upstream bytes unless they match the single pinned SHA-256.  
+**Regression guard:** GitHub Release asset `ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-8.1.zip` is uploaded with GitHub-reported digest `sha256:9bb4c17bf1e271e7944a61d900716e61c6f6b4ef556544f3907b131cbc0bfd41`; package cache and downloaded bytes are checked against that same digest, and no newer FFmpeg is substituted automatically.  
+**Verification result:** GitHub Actions run `35443876832` SUCCESS published the asset. GitHub Release API read-back confirms state `uploaded`, size `146106441`, and the exact pinned SHA-256 digest.  
 **Dependency findings checked:** X44, X50, X56  
-**Source status:** OPEN-IMPLEMENTATION  
+**Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
-**Residual risk/blocker:** Publish the exact SHA-256-pinned FFmpeg archive at the project-controlled Release URL in `release-contract.json`; only then may X71 be SOURCE-CLOSED.
-
+**Residual risk/blocker:** No R1 source/artifact blocker; clean-cache canonical package execution remains R8.
 ## X72 — REUSE authority is not revalidated at the commit boundary
 
 **Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
@@ -3268,7 +3263,7 @@ Target:
 
 X65 is an execution-evidence task and belongs to R8, not source remediation unless reproduced.
 
-**R1 implementation status — 2026-09-19:** OPEN-IMPLEMENTATION. X01, X02, X03, X04, X05, X43, X44, X49, and X64 are SOURCE-CLOSED at implementation SHA `f937fc8a2d85638107b6753e38bde8e41d1a16e0`. X50 remains open for authentic NuGet lockfiles/locked restore; X71 remains open until the pinned FFmpeg archive is actually published to the project-controlled mirror declared by `release-contract.json`. Runtime/build verification remains R8.
+**R1 implementation status — 2026-09-19:** SOURCE-CLOSED. X01, X02, X03, X04, X05, X43, X44, X49, X50, X64, and X71 are SOURCE-CLOSED. X50 now has six authentic SDK-10.0.401 NuGet lockfiles plus locked canonical restore/provenance; X71 now has the exact pinned FFmpeg archive under the project-controlled GitHub Release authority. Build/package/runtime acceptance remains R8 and is not implied by R1 source closure.
 
 Reason: later fixes depend on stable appearance, deployment, model, path-job, package, compatibility, and build authorities.
 
