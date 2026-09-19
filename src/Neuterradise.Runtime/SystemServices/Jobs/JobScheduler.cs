@@ -663,18 +663,18 @@ public sealed class JobScheduler : IAsyncDisposable
 
                 await CompleteAttemptAsync(lease, jobId, result).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-
-            }
             catch (OperationCanceledException) when (cancelSignal.IsCancellationRequested)
             {
                 var intent = _cancellation.PeekIntent(jobId);
-                if (intent == JobControlIntent.None)
+                if (intent == JobControlIntent.None && cancellationToken.IsCancellationRequested)
                 {
-                    // Natural completion already settled the durable job.
+                    // A lease can cross the tiny interval between the shutdown intent snapshot and
+                    // scheduler-token cancellation. Scheduler shutdown is still the semantic owner.
+                    _cancellation.SetIntent(jobId, JobControlIntent.Shutdown);
+                    intent = JobControlIntent.Shutdown;
                 }
-                else
+
+                if (intent != JobControlIntent.None)
                 {
                     await CompleteAttemptAsync(
                         lease,
@@ -683,6 +683,11 @@ public sealed class JobScheduler : IAsyncDisposable
                             "The handler stopped at a safe boundary after its execution token was signalled."))
                         .ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The linked cancellation registration normally handles scheduler shutdown above.
+                // This fallback is only reachable if cancellation occurs before registration becomes observable.
             }
             catch (Exception exception)
             {
