@@ -1743,18 +1743,53 @@ public sealed class ImportWrites
 
         if (!hasDestinationRelation && !hasActiveOwnerOutsideDestination)
         {
-            await using var insertRelation = transaction.CreateCommand(
+            var associationNow = _timeProvider.GetUtcNow();
+            await using (var insertRelation = transaction.CreateCommand(
                 """
                 INSERT INTO profile_assets(
                     profile_id, asset_id, relation_type, provenance_key, created_at_ms)
                 VALUES(
                     $profileId, $assetId, 'MANUAL', $provenanceKey, $now);
-                """);
-            insertRelation.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
-            insertRelation.Parameters.AddWithValue("$assetId", DbGuid.Format(reusedAssetId));
-            insertRelation.Parameters.AddWithValue("$provenanceKey", $"import:{importUnitId:D}");
-            insertRelation.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
-            await insertRelation.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                """))
+            {
+                insertRelation.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
+                insertRelation.Parameters.AddWithValue("$assetId", DbGuid.Format(reusedAssetId));
+                insertRelation.Parameters.AddWithValue("$provenanceKey", $"import:{importUnitId:D}");
+                insertRelation.Parameters.AddWithValue("$now", DbTime.Format(associationNow));
+                await insertRelation.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using (var publication = transaction.CreateCommand(
+                """
+                SELECT publication_import_unit_id
+                FROM profile_assets
+                WHERE profile_id = $profileId
+                  AND asset_id = $assetId
+                  AND relation_type = 'MANUAL';
+                """))
+            {
+                publication.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
+                publication.Parameters.AddWithValue("$assetId", DbGuid.Format(reusedAssetId));
+                var attributed = await publication.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+                if (!string.Equals(attributed, DbGuid.Format(importUnitId), StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            await ActivityWrites.AppendInternalAsync(
+                    transaction,
+                    new ActivityEntryPersistence(
+                        Guid.NewGuid(),
+                        ActivityEventType.AssetAssociationAdded,
+                        destinationProfileId,
+                        reusedAssetId,
+                        importUnitId,
+                        OperationId: null,
+                        PayloadJson: "{\"relationType\":\"MANUAL\"}",
+                        associationNow),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (candidateState == "CANDIDATE")
