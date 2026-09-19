@@ -2,6 +2,7 @@ using Neuterradise.App.Import;
 using Neuterradise.App.Import.Verification;
 using Neuterradise.App.Media;
 using Neuterradise.App.Media.Model;
+using Neuterradise.App.SystemServices.Jobs;
 
 namespace Neuterradise.App.SystemServices.Database.Writes;
 
@@ -646,6 +647,53 @@ public sealed class ImportWrites
             throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
         }
 
+        if (isTerminal)
+        {
+            // X69: terminal units no longer own durable scheduling interest. Recompute shared
+            // Asset priority using only remaining live consumers, then remove this unit's rows.
+            await using (var reprioritize = transaction.CreateCommand(
+                """
+                UPDATE jobs
+                SET priority = COALESCE(
+                        (
+                            SELECT MAX(interest.desired_priority)
+                            FROM import_asset_interests interest
+                            JOIN import_units consumer ON consumer.import_unit_id = interest.import_unit_id
+                            WHERE interest.asset_id = jobs.owner_id
+                              AND interest.import_unit_id <> $unitId
+                              AND consumer.is_paused = 0
+                              AND consumer.state NOT IN (
+                                  'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                                  'CANCELLED','FAILED_TERMINAL'
+                              )
+                        ),
+                        $backgroundPriority
+                    ),
+                    row_version = row_version + 1
+                WHERE owner_type = 'Asset'
+                  AND owner_id IN (
+                      SELECT asset_id
+                      FROM import_asset_interests
+                      WHERE import_unit_id = $unitId
+                  )
+                  AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE');
+                """))
+            {
+                reprioritize.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+                reprioritize.Parameters.AddWithValue(
+                    "$backgroundPriority",
+                    JobPriorityPolicy.DefaultPriority);
+                await reprioritize.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using (var release = transaction.CreateCommand(
+                "DELETE FROM import_asset_interests WHERE import_unit_id = $unitId;"))
+            {
+                release.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+                await release.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         transaction.QueueInvalidation(new CatalogInvalidation(
             Guid.Empty,
             [unitId],
@@ -1278,6 +1326,83 @@ public sealed class ImportWrites
     /// Retires a candidate with the one canonical reason (Section 9.2). The reason vocabulary lives in
     /// <see cref="AssetRetirementReason"/>; this writer no longer keeps a private literal list.
     /// </summary>
+    public async Task<bool> ValidateReuseAuthorityAsync(
+        Guid candidateAssetId,
+        Guid reusedAssetId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(candidateAssetId, nameof(candidateAssetId));
+        EnsureNonEmpty(reusedAssetId, nameof(reusedAssetId));
+        if (candidateAssetId == reusedAssetId)
+        {
+            return false;
+        }
+
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT candidate.state, candidate.sha256, candidate.byte_length,
+                   candidate.bundle_sha256, candidate.dependency_status,
+                   candidate.dependency_discovery_state,
+                   reused.state, reused.sha256, reused.byte_length,
+                   reused.bundle_sha256, reused.dependency_status,
+                   reused.dependency_discovery_state,
+                   reused.current_managed_relative_path, reused.current_managed_file_name
+            FROM assets candidate
+            JOIN assets reused ON reused.asset_id = $reusedId
+            WHERE candidate.asset_id = $candidateId;
+            """;
+        command.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+        command.Parameters.AddWithValue("$reusedId", DbGuid.Format(reusedAssetId));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var candidateState = reader.GetString(0);
+        var candidateSha = reader.IsDBNull(1) ? null : reader.GetString(1);
+        var candidateLength = reader.IsDBNull(2) ? (long?)null : reader.GetInt64(2);
+        var candidateBundle = reader.IsDBNull(3) ? null : reader.GetString(3);
+        var candidateDependency = reader.GetString(4);
+        var candidateDiscovery = reader.GetString(5);
+        var reusedState = reader.GetString(6);
+        var reusedSha = reader.IsDBNull(7) ? null : reader.GetString(7);
+        var reusedLength = reader.IsDBNull(8) ? (long?)null : reader.GetInt64(8);
+        var reusedBundle = reader.IsDBNull(9) ? null : reader.GetString(9);
+        var reusedDependency = reader.GetString(10);
+        var reusedDiscovery = reader.GetString(11);
+        var reusedPath = reader.IsDBNull(12) ? null : reader.GetString(12);
+        var reusedName = reader.IsDBNull(13) ? null : reader.GetString(13);
+
+        if (candidateState is not ("CANDIDATE" or "RETIRED")
+            || reusedState != "ACTIVE"
+            || string.IsNullOrWhiteSpace(reusedPath)
+            || string.IsNullOrWhiteSpace(reusedName))
+        {
+            return false;
+        }
+
+        var packageAuthority = candidateBundle is not null || reusedBundle is not null;
+        return packageAuthority
+            ? candidateBundle is not null
+              && reusedBundle is not null
+              && string.Equals(candidateBundle, reusedBundle, StringComparison.Ordinal)
+              && candidateDiscovery == "COMPLETE"
+              && reusedDiscovery == "COMPLETE"
+              && candidateDependency is "COMPLETE" or "SELF_CONTAINED"
+              && reusedDependency is "COMPLETE" or "SELF_CONTAINED"
+            : candidateSha is not null
+              && reusedSha is not null
+              && candidateLength.HasValue
+              && reusedLength.HasValue
+              && candidateLength.Value == reusedLength.Value
+              && string.Equals(candidateSha, reusedSha, StringComparison.Ordinal);
+    }
+
     public async Task<bool> RetireCandidateForReuseAsync(
         Guid candidateAssetId,
         Guid reusedAssetId,

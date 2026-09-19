@@ -286,6 +286,30 @@ public sealed class ImportCommitCoordinator
             if (await IsCancelledAsync(unitId, cancellationToken).ConfigureAwait(false))
                 return ImportCommitResult.CancelledAt(unitId, state.OperationId, state.Checkpoint);
             cancellationToken.ThrowIfCancellationRequested();
+
+            // X72: stale REUSE authority is a precondition for the whole domain checkpoint.
+            // Reject it before activating any new Candidate so a stale duplicate decision cannot
+            // leave unrelated DomainAuthorityCommitted mutations ahead of the durable checkpoint.
+            foreach (var item in dedup)
+            {
+                if (item.CandidateAssetId is not Guid candidateId
+                    || item.ReusedAssetId is not Guid reusedId
+                    || !await _catalog.ImportWrites.ValidateReuseAuthorityAsync(
+                            candidateId,
+                            reusedId,
+                            cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return CommitBlockedResult(
+                        unitId,
+                        state,
+                        [new VerificationBlocker(
+                            item.ItemId,
+                            "REUSE_AUTHORITY_STALE",
+                            "The reviewed REUSE authority changed before domain commit; the Candidate was preserved.")]);
+                }
+            }
+
             foreach (var item in included)
             {
                 await ActivateItemAsync(destinationProfileId, item, cancellationToken).ConfigureAwait(false);

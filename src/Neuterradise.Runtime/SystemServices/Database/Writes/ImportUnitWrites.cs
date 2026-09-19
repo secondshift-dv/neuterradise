@@ -493,16 +493,68 @@ public sealed class ImportUnitWrites
     {
         await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
+        await using var transaction = CatalogTransaction.Begin(connection);
+
+        await using (var update = transaction.CreateCommand(
             """
             UPDATE import_units
-            SET rollback_settled = 1, updated_at_ms = $now, row_version = row_version + 1
-            WHERE import_unit_id = $unitId AND state = 'CANCELLED';
-            """;
-        command.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
-        command.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            SET rollback_settled = 1,
+                updated_at_ms = $now,
+                row_version = row_version + 1
+            WHERE import_unit_id = $unitId
+              AND state = 'CANCELLED';
+            """))
+        {
+            update.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            update.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
+            await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Cancellation keeps interest rows until running shared work has reached a safe boundary.
+        // Once rollback is settled, the cancelled unit has no remaining scheduling interest.
+        await using (var reprioritize = transaction.CreateCommand(
+            """
+            UPDATE jobs
+            SET priority = COALESCE(
+                    (
+                        SELECT MAX(interest.desired_priority)
+                        FROM import_asset_interests interest
+                        JOIN import_units consumer ON consumer.import_unit_id = interest.import_unit_id
+                        WHERE interest.asset_id = jobs.owner_id
+                          AND interest.import_unit_id <> $unitId
+                          AND consumer.is_paused = 0
+                          AND consumer.state NOT IN (
+                              'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                              'CANCELLED','FAILED_TERMINAL'
+                          )
+                    ),
+                    $backgroundPriority
+                ),
+                row_version = row_version + 1
+            WHERE owner_type = 'Asset'
+              AND owner_id IN (
+                  SELECT asset_id
+                  FROM import_asset_interests
+                  WHERE import_unit_id = $unitId
+              )
+              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE');
+            """))
+        {
+            reprioritize.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            reprioritize.Parameters.AddWithValue(
+                "$backgroundPriority",
+                JobPriorityPolicy.DefaultPriority);
+            await reprioritize.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var release = transaction.CreateCommand(
+            "DELETE FROM import_asset_interests WHERE import_unit_id = $unitId;"))
+        {
+            release.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            await release.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Reads the CommitState snapshot needed for appearance rollback.</summary>
