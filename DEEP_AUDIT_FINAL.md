@@ -8,9 +8,9 @@
 **Frozen source baseline:** 3f5f7c861fd773336182e4c61871e95c8761a549  
 **Pre-documentation live HEAD:** be5d99b4659892de1b8d2697538fd6e29c3c24b5  
 **Pre-documentation comparison:** main is two commits ahead of the frozen baseline with zero file differences. The two commits are an unintended Stage 4 source change and its revert.  
-**Authority status:** This file is the canonical Deep Audit Stage 1–12 ledger and remediation specification.  
+**Authority status:** TRUST-CERTIFIED static audit ledger and remediation specification. Historical claims are subordinate to Section 4A falsification classification.  
 **Audit status:** CLOSED-DOC  
-**Source remediation status:** OPEN  
+**Source remediation status:** OPEN — implement only CONFIRMED-SOURCE and CONFIRMED-HARDENING records.  
 **Build/package/runtime acceptance:** NOT YET PROVEN  
 **Next valid finding ID:** X74
 
@@ -81,12 +81,120 @@ Do not translate CLOSED-DOC into fixed, passed, safe, production-ready, or runti
 | 11 | Build / Package / Runtime verification | X56–X61 |
 | 12 | Convergence / audit-control closure + final coverage reconciliation | X62–X73 |
 
-Concrete documented findings: **70**.  
-- **68 remediation/evidence findings:** X01–X26, X30–X61, X64–X73.  
-- **2 audit-control findings:** X62–X63.  
-Reserved historical IDs: **3**.
+Concrete ledger records: **70**.  
+- **52 CONFIRMED-SOURCE findings**  
+- **5 CONFIRMED-HARDENING gaps**  
+- **7 EXECUTION-EVIDENCE-GAP records**  
+- **4 REJECTED-AS-INDEPENDENT-FINDING records**  
+- **2 AUDIT-CONTROL records**  
+Reserved historical IDs: **3 (X27–X29)**.
 
 ---
+
+# 4A. Trustworthiness certification
+
+This section is the **falsification result**, not a restatement of prior audit conclusions.
+
+Every X record was classified by tracing the current source producer → durable authority → consumer → recovery/terminal path. A historical finding was not retained merely because an earlier chat or audit named it.
+
+## 4A.1 Certified classification
+
+| Class | Count | Meaning |
+| --- | ---: | --- |
+| CONFIRMED-SOURCE | **52** | A concrete reachable source mismatch/failure path is present. Remediation is authorized. |
+| CONFIRMED-HARDENING | **5** | The weaker behavior is real, but the item is security/supply-chain/reproducibility hardening rather than a demonstrated functional failure. |
+| EXECUTION-EVIDENCE-GAP | **7** | Static source cannot prove PASS/FAIL; executable artifact/runtime evidence is required. |
+| REJECTED-AS-INDEPENDENT-FINDING | **4** | Falsification disproved the original claim or showed it is already owned by another root cause. Do not implement it separately. |
+| AUDIT-CONTROL | **2** | Ledger/provenance controls, not application defects. |
+| RESERVED | **3 IDs** | X27–X29 are unavailable historical slots and are not findings. |
+
+**52 + 5 + 7 + 4 + 2 = 70 concrete ledger records. X27–X29 are reserved only.**
+
+## 4A.2 Per-finding trust ledger
+
+| ID | Classification | Primary source evidence / disposition |
+| --- | --- | --- |
+| X01 | CONFIRMED-SOURCE | ProfileAppearanceRules permits VIDEO CoverFrame; CriticalIntegrityGate cover SQL permits IMAGE only. |
+| X02 | CONFIRMED-SOURCE | App handoff carries Manifest, but Updater ReplacementEngine.HandoffData contains no Manifest/hash authority. |
+| X03 | CONFIRMED-SOURCE | Host sets Worker install-root environment to application InstallRoot; Worker resolves InstallRoot/models; package installs workers/models. |
+| X04 | CONFIRMED-SOURCE | ProfileOperations supports optional rename enqueue; production ProfileDetailViewModel constructs it without enqueue wiring. |
+| X05 | CONFIRMED-SOURCE | MediaOperations supports optional owner-relocation enqueue; production detail path constructs it without enqueue wiring. |
+| X06 | CONFIRMED-SOURCE | Asset Trash deletes OWNER only; DB trigger forbids non-ACTIVE asset while any profile_assets relation remains. |
+| X07 | CONFIRMED-SOURCE | Profile Trash sets trashed marker without resolving all profile_assets/active identity required by DB trigger. |
+| X08 | CONFIRMED-SOURCE | Profile physical recovery work lacks equivalent restart handling; TrashRecovery handles EXECUTING/IN_TRASH Asset branches, not the paired Profile path. |
+| X09 | CONFIRMED-SOURCE | Same-volume replay returns UnexpectedTarget when both source and already-copied target exist before checkpoint recovery. |
+| X10 | CONFIRMED-SOURCE | Source bytes are verified on an open stream, but destructive File.Delete(path) remains pathname-based; source identity can be absent and the delete race is not handle-bound. |
+| X11 | CONFIRMED-SOURCE | REUSE cleanup reads component metadata from ManagedAssetId/reused target while destructive source authority belongs to CandidateAssetId. |
+| X12 | CONFIRMED-SOURCE | ProvisionProfileFolderAsync mutates directory/manifest before DestinationPrepared is checkpointed. |
+| X13 | CONFIRMED-SOURCE | LibraryHealthEvaluator verifies primary managed asset bytes/path but does not enumerate/verify required asset_components package members. |
+| X14 | CONFIRMED-SOURCE | ModelPackageDiscovery catches GLTF/OBJ/DAE parse/IO failures and can fall through to SelfContained when dependency discovery produced no entries. |
+| X15 | REJECTED | Complete package duplicate detection already uses BundleSha256; remaining risks are X14/X72. |
+| X16 | REJECTED | Durable acknowledged-missing-dependency IDs are persisted and consumed by VerificationValidator. |
+| X17 | CONFIRMED-SOURCE | Import uses AllocateAssetPlan, while RestoreExecutor and MediaOperations directly call PlanAsset, allowing avoidable collision/attention paths. |
+| X18 | REJECTED | No reachable production path using naive textual prefix as path authority was proven. |
+| X19 | CONFIRMED-SOURCE | Job handlers catch cancellation and return JobExecutionResult.Cancelled; scheduler Pause intent mapping only runs when cancellation exception escapes. |
+| X20 | CONFIRMED-SOURCE | ImportFinalizer has its own pass gate; cancellation settlement has no shared per-unit mutation lease covering the whole commit/rollback boundary. |
+| X21 | CONFIRMED-SOURCE | ImportWrites.UpdateUnitStateAsync updates by unit ID without expected row-version/legal-transition predicate. |
+| X22 | CONFIRMED-SOURCE | ShutdownCoordinator can time out service disposal then finally dispose BootstrapContext/VaultLock while timed-out disposal task may still run. |
+| X23 | CONFIRMED-SOURCE | SessionMarkerStore.WriteUncleanAsync has no production caller; only clean marker writing is wired. |
+| X24 | CONFIRMED-SOURCE | Start ignores failed ResumeUnitAsync result and still persists focus; Prioritize focuses without lifecycle validation. |
+| X25 | CONFIRMED-SOURCE | CapabilityReads counts every applicable capability and every FAILED row as blocking although applicability marks face/search/etc optional. |
+| X26 | CONFIRMED-SOURCE | Scheduler shutdown cancels linked handler token; handlers convert that token cancellation to Cancelled and can durably cancel resumable work. |
+| X27–X29 | RESERVED | Historical slots only. |
+| X30 | CONFIRMED-SOURCE | Profiling dispatcher awaits AnalyzeFaces in the read loop; CancelRequest cannot be read until that handler returns. |
+| X31 | CONFIRMED-SOURCE | Worker uses ExpectedSha256 to derive detection keys but does not hash/compare input bytes before decode/inference. |
+| X32 | CONFIRMED-SOURCE | IdentityBankProvider caches spaces; FaceDecisionOperations changes identity_samples without invalidating that provider. |
+| X33 | CONFIRMED-SOURCE | FaceAnalysisJobHandler persists embedding-bearing detection rows using YuNet ModelId/ModelVersion while embedding space is SFace. |
+| X34 | CONFIRMED-SOURCE | ProfilingWorkerProcessHost resets ConsecutiveFailures immediately on Ready handshake, allowing Ready→crash loops to reset the breaker. |
+| X35 | CONFIRMED-SOURCE | BuildIdentityIndex sends complete sample bank in one request while protocol enforces a finite single-frame payload limit. |
+| X36 | CONFIRMED-SOURCE | ReleaseIndex is after normal matching loop and is not protected by finally/lease cleanup. |
+| X37 | CONFIRMED-SOURCE | Purge profile dependency/preflight/delete logic omits import_assignment_clusters candidate_profile_id/decided_profile_id FKs. |
+| X38 | CONFIRMED-SOURCE | Profile LoadAsync uses fire-and-return UiDispatch.Run after ConfigureAwait(false); applySucceeded can be tested before queued UI commit executes. |
+| X39 | CONFIRMED-SOURCE | Settings InitializeAsync uses ConfigureAwait(false) on configuration load then raises UI-bound properties directly. |
+| X40 | CONFIRMED-SOURCE | ApplyLanguageAsync mutates CurrentLanguage/SurfaceText before durable configuration save succeeds. |
+| X41 | CONFIRMED-SOURCE | LatestValueAction drains with ConfigureAwait(false); theme/presentation apply path can therefore enter live presentation from a worker continuation. |
+| X42 | CONFIRMED-SOURCE | Several queued UiDispatch.Run callbacks do not recheck route lifetime/generation inside the callback, e.g. final ShowReady path. |
+| X43 | CONFIRMED-SOURCE | release workflow sets custom NUGET_PACKAGES; package script locates OpenCvSharp under USERPROFILE/.nuget/packages instead. |
+| X44 | CONFIRMED-SOURCE | UpdatePackageValidator requires app executable but does not independently require Worker/Updater core membership for arbitrary approved manifests. |
+| X45 | CONFIRMED-HARDENING | UpdateTrustPolicy explicitly states publisher identity verification is not part of v0.0.1 trust contract. |
+| X46 | CONFIRMED-HARDENING | release workflow grants contents:write while build job consumes movable major action tags. |
+| X47 | CONFIRMED-SOURCE | Successful updater path has no convergent terminal cleanup owner for operation payload/tools and replacement backup/staging residues. |
+| X48 | CONFIRMED-SOURCE | UpdateStateStore.LoadAsync can throw corrupt JSON before UpdateStartupRecovery's typed plan/handoff corruption catches. |
+| X49 | CONFIRMED-SOURCE | Manifest MinimumCompatibleVersion exists but UpdateTrustPolicy only checks runtime and newer ProductVersion. |
+| X50 | CONFIRMED-HARDENING | global.json does not pin an exact .NET SDK; canonical restore/build lacks a fully locked toolchain/dependency authority. |
+| X51 | REJECTED | Current JobRecovery exhausts final attempts instead of intentionally requeueing them. |
+| X52 | CONFIRMED-SOURCE | AppBootstrapper disposes BootstrapContext/VaultLock on callback failure before App-level CleanupPartialStartupAsync disposes runtime created during prewarm. |
+| X53 | CONFIRMED-SOURCE | Startup blocks only Recovery.HasFatal; CriticalIntegrityGate does not cover path_state NEEDS_ATTENTION, so path authority ambiguity can remain writable. |
+| X54 | CONFIRMED-SOURCE | App constructs ShutdownCoordinator without stopAcceptingCommands; no process-wide mutation admission gate closes at shutdown start. |
+| X55 | CONFIRMED-SOURCE | Updater waits parent at most 60s while app performs finalizer/UI/import work before ShutdownCoordinator's bounded shutdown phase. |
+| X56 | EXECUTION-EVIDENCE-GAP | No accepted exact-SHA canonical Release build result for the remediated tree. |
+| X57 | EXECUTION-EVIDENCE-GAP | Package structural validation is not executable startup evidence. |
+| X58 | EXECUTION-EVIDENCE-GAP | Isolated deterministic runtime verification harness is required. |
+| X59 | EXECUTION-EVIDENCE-GAP | Packaged Worker/OpenCV/YuNet/SFace inference has not been executed as acceptance evidence. |
+| X60 | EXECUTION-EVIDENCE-GAP | Disposable updater replacement/recovery scenarios require process/filesystem execution. |
+| X61 | EXECUTION-EVIDENCE-GAP | Cross-domain lifecycle matrix must become an executable regression gate. |
+| X62 | AUDIT-CONTROL | X27–X29 provenance cannot be recovered; IDs remain reserved. |
+| X63 | AUDIT-CONTROL | Historical Stage 7 ID collision is superseded; canonical IDs are frozen. |
+| X64 | CONFIRMED-HARDENING | Extraction uses shared containment defenses, but explicit extraction-boundary proof/static-analysis clarity remains a security-hardening requirement. |
+| X65 | EXECUTION-EVIDENCE-GAP | Whether canonical Compress-Archive emits directory entries rejected by the stager must be proven with the exact ZIP artifact. |
+| X66 | CONFIRMED-SOURCE | Cancelled completion branch does not invoke immediate terminal observer; normal correctness can wait for terminal reconciliation polling. |
+| X67 | CONFIRMED-SOURCE | MediaActivationArbiter delays first-click action by GetDoubleClickTime/500ms fallback. |
+| X68 | CONFIRMED-SOURCE | Shell work/status projection is driven by a 750ms PeriodicTimer instead of normal change signaling. |
+| X69 | CONFIRMED-SOURCE | focused-import priority resolves jobs through candidate_asset_id only; shared reused_asset_id work has no durable per-unit interest model. |
+| X70 | CONFIRMED-SOURCE | UI copy command synchronously reaches Win32Clipboard.SetText, whose retry loop uses Thread.Sleep. |
+| X71 | CONFIRMED-HARDENING | FFmpeg identity is pinned but clean-build availability depends on an external upstream release URL. |
+| X72 | CONFIRMED-SOURCE | REUSE decision is not transactionally revalidated against current active/content/package authority immediately before commit. |
+| X73 | CONFIRMED-SOURCE | cancellation exclusivity query excludes reused_asset_id only within the same ImportUnit and can trash an asset another live import reuses. |
+
+## 4A.3 Trust rules
+
+1. Only **CONFIRMED-SOURCE** and **CONFIRMED-HARDENING** items authorize source changes.
+2. **EXECUTION-EVIDENCE-GAP** items authorize verification work, not speculative source patches.
+3. **REJECTED** items must not appear in implementation queues.
+4. Any future challenge to an X item must be resolved by source/executable evidence and recorded as a status change; historical wording alone is not authority.
+5. A new X74+ is allowed only for a distinct root cause not already owned by this ledger.
+6. Static certification does not claim zero possible bugs. It claims that the ledger no longer treats unproven historical assertions as source defects and that every retained source finding has a concrete code-path basis.
+
 
 # 5. Global invariants
 
@@ -144,7 +252,7 @@ No link may be skipped.
 
 ## X01 — Cover video-frame accepted by appearance rules but rejected by startup integrity
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -201,7 +309,7 @@ Create persisted valid and invalid appearance fixtures, restart through the actu
 
 ## X02 — Updater helper loses manifest/hash authority after handoff
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -254,7 +362,7 @@ Disposable InstallRoot E2E test with deliberate staging mutation between handoff
 
 ## X03 — Packaged profiling model root disagrees with Worker resolver
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -307,7 +415,7 @@ Packaged Worker handshake plus one real YuNet/SFace inference in the packaged la
 
 ## X04 — Profile rename reconciliation obligations lack guaranteed production enqueue
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -344,7 +452,7 @@ End-to-end rename → job → PathReconciler → restart convergence.
 
 ## X05 — OWNER relocation obligations lack guaranteed production enqueue
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -384,7 +492,7 @@ Database OWNER and final managed path must converge after every injected crash b
 
 ## X06 — Asset Trash fails when APPEARS or MANUAL relations remain
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -433,7 +541,7 @@ Fault-injected Trash/Restore plus restart on every durable boundary.
 
 ## X07 — NORMAL Profile Trash violates active identity/relation invariants
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -480,7 +588,7 @@ DB trigger remains enabled. Tests must pass with the real invariant, not by disa
 
 ## X08 — Profile Trash/Restore is not restart-convergent
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -516,7 +624,7 @@ Automated restart matrix for Profile Trash and Profile Restore.
 
 ## X09 — Same-volume replay misclassifies an operation-owned target as UnexpectedTarget
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -549,7 +657,7 @@ Repeat replay multiple times and assert idempotence.
 
 ## X10 — MOVE source deletion is fail-open when stable object identity is unavailable
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -586,86 +694,96 @@ Adversarial rename/replace tests against the actual Windows cleanup implementati
 
 ---
 
-## X11 — Imported model/package component cleanup uses incomplete source authority
+## X11 — REUSE package cleanup reads component authority from the reused target instead of the candidate source
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
-Multi-component imported assets require per-component source→managed mapping. Cleanup cannot safely reconstruct every component source merely from the primary source directory or target package layout.
+`SourceCleanupExecutor` correctly states that cleanup-source component authority is the CandidateAsset, but for multi-file cleanup it loads components using `targetAssetId = ManagedAssetId`. Under REUSE, `ManagedAssetId` is the pre-existing reused library asset, while `sourceAssetId` is the newly imported candidate.
+
+Relevant path:
+
+- `src/Neuterradise.Runtime/SystemServices/Storage/SourceCleanupExecutor.cs`
+
+The executor then derives source paths from those reused-target component records and writes cleanup states back against the candidate asset ID.
 
 ### Root cause / failure path
 
-The primary asset is treated as the whole cleanup authority even when the imported object is a package.
+REUSE has two different authorities:
+
+- **candidate** = current external source that may be deleted under MOVE;
+- **reused target** = existing managed library asset that proves durable destination authority.
+
+The code reads component membership/source metadata from the target while destructive cleanup must be authorized from the candidate.
+
+candidate package A → duplicate decision REUSE library package B → cleanup loads B's component records → candidate cleanup can target stale/unrelated source component paths or fail to match candidate component rows.
 
 ### Penyelesaian
 
-Persist exact per-component cleanup obligations:
+Split cleanup authority explicitly:
 
-- original source path;
-- relative component identity;
-- expected length/hash;
-- stable source identity;
-- managed target authority;
-- cleanup state.
-
-Do not infer a source path later when exact authority can be persisted during admission/materialization.
+- candidate component set supplies OriginalSourcePath, SourceIdentityJson, source hash/length, and cleanup state;
+- reused target component set supplies managed-destination verification only;
+- pair components through canonical normalized component identity/bundle authority;
+- refuse destructive cleanup if the two sets cannot be reconciled deterministically.
 
 ### Penanggulangan
 
 Regression matrix:
 
 - included package;
-- reused asset;
-- nested component paths;
-- renamed source package;
-- component mismatch;
-- partial deletion;
-- retry/restart;
-- row-version/CAS conflict.
+- reused package from a different historical source directory;
+- same bundle with different original paths;
+- candidate package with missing/changed component;
+- retry/restart after partial component cleanup.
 
 ### Verification
 
-Package cleanup must prove every destructive component delete independently.
+For REUSE+MOVE, every deleted external path must originate from the current candidate's persisted component authority, never from the reused library asset's historical source metadata.
 
----
+## X12 — Profile-folder filesystem side effects occur before DestinationPrepared is durably checkpointed
 
-## X12 — Pre-domain side effects are not fully compensation- and cancellation-fenced
-
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
-Import/storage preparation can perform filesystem or staging side effects before the final domain authority is committed. Cancellation or failure in the gap can leave durable residue not owned by a terminal domain state.
+`ImportCommitCoordinator.PrepareDestinationAsync` creates the canonical profile directory and writes `profile.json` inside `ProvisionProfileFolderAsync`. The caller advances the import operation to `DestinationPrepared` only **after** `PrepareDestinationAsync` returns.
+
+Relevant path:
+
+- `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs`
 
 ### Root cause / failure path
 
-Side effects precede the authority/checkpoint that explains them, without one compensation owner.
+The operation persists some destination identity early, but the physical folder/manifest mutation itself has no dedicated durable checkpoint before it occurs.
+
+persist destination IDs → create profile folder → write manifest → process/cancellation/failure before DestinationPrepared checkpoint → durable operation checkpoint lags filesystem state.
+
+Replay may be able to converge in many cases because names are deterministic, but the source does not make that side effect/checkpoint relationship explicit enough to guarantee cleanup/recovery for every interruption.
 
 ### Penyelesaian
 
-Every pre-authority side effect must have one of:
+Make folder provisioning an explicit idempotent durable phase:
 
-- an operation-scoped durable journal written first;
-- a deterministic idempotent cleanup obligation;
-- a rollback/compensation phase;
-- a cancellation fence that prevents terminal cancellation until the side effect is checkpointed.
+- persist the intended profile folder path before mutation;
+- checkpoint provisioning intent;
+- create/verify directory and manifest;
+- checkpoint physical completion;
+- make replay distinguish owned already-completed material from collision;
+- make cancellation rollback/recovery consume the same phase.
 
 ### Penanggulangan
 
-Crash/cancel before and after every directory creation, copy, intermediate move, package extraction, and checkpoint.
-
-No orphan physical object may exist without a durable operation that can reconcile it.
+Crash/cancel injection before directory creation, after directory creation, after manifest write, and before DestinationPrepared checkpoint.
 
 ### Verification
 
-Recovery sweep after injected process termination must classify and converge every residue.
-
----
+Every injected interruption must restart to either a valid resumed DestinationPrepared state or a deterministic rollback without orphan profile material.
 
 ## X13 — Health/integrity evaluation is package-unaware
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -696,7 +814,7 @@ Health check against real multi-component assets after restart.
 
 ## X14 — Dependency discovery can fail open
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -728,68 +846,80 @@ Known dependency fixtures with intentionally broken discovery.
 
 ---
 
-## X15 — Duplicate/reuse authority can split primary asset and package authority
+## X15 — Duplicate/reuse package authority split
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** REJECTED-AS-INDEPENDENT-FINDING
 
-### Temuan
+### Temuan audit sebelumnya
 
-Exact duplicate/reuse decisions can identify a primary asset as reusable while component/package authority differs or is incomplete.
+The earlier ledger treated package duplicate/reuse identity as independently unsafe because a model candidate can have more than one component.
 
-### Root cause / failure path
+### Falsification result
 
-Duplicate identity is evaluated too narrowly if package membership is not part of the canonical identity for package-backed media.
+This is **not retained as an independent defect**.
 
-### Penyelesaian
+The current source computes `ModelPackageDiscovery.BundleSha256` for complete/self-contained packages and passes that value into `ExactDuplicateDetector.DetectDuplicateAsync`. The duplicate detector uses `bundle_sha256` when that authority exists. Missing/unknown dependency states are separately persisted and are validated by the verification path.
 
-For package-backed media, duplicate/reuse authority must include the required component set and relevant hashes/provenance. Reuse must resolve one complete authoritative asset, not a hybrid of old primary bytes and newly imported components.
+Relevant paths:
 
-### Penanggulangan
+- `src/Neuterradise.Runtime/Import/Preparation/ImportPreparationCoordinator.cs`
+- `src/Neuterradise.Runtime/Import/Preparation/ExactDuplicateDetector.cs`
+- `src/Neuterradise.Runtime/Import/Verification/VerificationValidator.cs`
 
-Test identical primary with different component; identical package; missing component; reused asset with degraded package health.
+### Canonical disposition
 
-### Verification
+Do **not** implement X15 as a separate fix.
 
-No duplicate decision may produce split physical authority.
+Remaining real risks are already owned by:
 
----
-
-## X16 — Missing-dependency acknowledgement is not an executable durable decision
-
-**Status:** OPEN-IMPLEMENTATION
-
-### Temuan
-
-The system can surface missing dependency information but the user acknowledgement/decision path is not guaranteed to produce a durable state that admission, verification, restart, and finalization all understand.
-
-### Root cause / failure path
-
-UI acknowledgement and domain admission state are separate concepts.
-
-### Penyelesaian
-
-Define a durable explicit decision contract such as:
-
-- reject item;
-- accept degraded import for supported cases;
-- supply/resolve dependency;
-- defer.
-
-Persist the choice with row-version semantics and consume it in readiness/verification.
+- **X14** — dependency discovery can fail open;
+- **X72** — a previously accepted REUSE decision is not revalidated at the final commit boundary.
 
 ### Penanggulangan
 
-Restart after acknowledgement must reproduce the same decision. Unsupported degraded cases must remain blocked.
+Regression coverage for package duplicate/reuse belongs to X14 and X72. If a future failure demonstrates a distinct package-identity root cause not covered by those findings, allocate X74+ with direct source evidence.
 
 ### Verification
 
-Missing-dependency workflow from detection through restart and publish.
+The trusted ledger must exclude X15 from source-remediation counts and implementation queues.
 
----
+## X16 — Missing-dependency acknowledgement is already durable and executable
+
+**Status:** REJECTED-AS-INDEPENDENT-FINDING
+
+### Temuan audit sebelumnya
+
+The earlier ledger claimed that acknowledgement of missing model dependencies was presentation-only and was not consumed by durable verification.
+
+### Falsification result
+
+That claim is false for the audited source.
+
+`VerificationDraftV1` persists `AcknowledgedMissingDependencyItemIds`, and `VerificationValidator` explicitly consumes that durable set when `dependency_status = DependenciesMissing`. For MOVE policy, `DependenciesUnknown` is separately blocked.
+
+Relevant path:
+
+- `src/Neuterradise.Runtime/Import/Verification/VerificationValidator.cs`
+
+The source therefore already has an executable durable acknowledgement contract.
+
+### Canonical disposition
+
+No X16 remediation is authorized.
+
+Dependency correctness remains covered by X14, and source cleanup fail-closed behavior for missing/unknown dependencies remains covered by the storage path.
+
+### Penanggulangan
+
+Keep regression coverage proving that acknowledgement survives reload/restart and that unknown dependencies remain prohibited under MOVE.
+
+### Verification
+
+X16 is excluded from remediation counts and must never be reintroduced unless new source evidence proves the durable acknowledgement is bypassed.
 
 ## X17 — Some placement paths bypass the collision-safe allocator
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -818,44 +948,37 @@ No production placement caller may materialize a path without collision authorit
 
 ---
 
-## X18 — Manifest-derived path containment is too weak if based on string prefix
+## X18 — Manifest-derived path containment weakness was not proven
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** REJECTED-AS-INDEPENDENT-FINDING
 
-### Temuan
+### Temuan audit sebelumnya
 
-Any manifest/recovery path validation that relies on textual prefix comparison can be bypassed by normalization, sibling-prefix, traversal, separator, or reparse behavior.
+The earlier ledger generalized that manifest/recovery path handling could be vulnerable if it relied on textual prefix checks.
 
-### Root cause / failure path
+### Falsification result
 
-Path text is treated as authority instead of the canonical filesystem location.
+No concrete production path supporting that claim was found in the audited source.
 
-### Penyelesaian
+The inspected update/storage/recovery consumers use `RootPathRules.ResolveContainedPath`, `Path.GetFullPath`, root equality/containment helpers, and reparse-point checks at destructive boundaries. A hypothetical warning about naive `StartsWith` containment is not a source defect without a reachable production path using it as authority.
 
-All manifest-derived or recovery-derived paths must pass the shared RootPathRules-style contract:
+### Canonical disposition
 
-- full qualification;
-- GetFullPath normalization;
-- same-root/within-root semantics using separator boundaries;
-- traversal rejection;
-- reparse-point policy;
-- expected operation-scoped root.
+X18 is rejected as an independent source finding.
+
+This does **not** remove archive-extraction hardening X64, whose scope is narrower: explicit extraction-boundary proof/static-analysis clarity while preserving the existing containment defenses.
 
 ### Penanggulangan
 
-Sibling-prefix, dot-dot, alternate separator, case, Unicode, junction/symlink/reparse, root path, and drive-relative tests.
+Any future path-containment finding must name the exact producer, consumer, unsafe comparison, and escaping input.
 
 ### Verification
 
-Negative containment suite over every manifest/recovery consumer.
-
----
-
-# 9. Stage 5 — Jobs / Scheduler / Concurrency / Recovery Findings
+X18 is absent from remediation queues and source-defect counts.
 
 ## X19 — Pause intent can become durable CANCELLED
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -890,7 +1013,7 @@ Pause can never permanently cancel resumable work.
 
 ## X20 — ImportFinalizer is outside Pause/Cancel quiescence ownership
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -924,7 +1047,7 @@ No cancellation settlement can undo or race a concurrently completing finalizer 
 
 ## X21 — Lifecycle/checkpoint writes are not sufficiently monotonic against stale writers
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -955,7 +1078,7 @@ Database assertion: no illegal reverse/terminal-escape transition.
 
 ## X22 — Shutdown timeout can release VaultLock while mutation disposal is still active
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -987,7 +1110,7 @@ Two-process lock test around shutdown timeout.
 
 ## X23 — Session marker is not yet a complete crash protocol
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1015,40 +1138,49 @@ A clean marker must never coexist with an unquiesced durable mutation from the s
 
 ---
 
-## X24 — Start/Prioritize can act on stale ImportUnit lifecycle
+## X24 — Start/Prioritize can persist focus for a terminal or stale ImportUnit
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
-A control command can resolve an ImportUnit/job target, then act after the unit has transitioned to a state where priority/start semantics no longer apply.
+`ImportUnitControlAuthority.StartAsync` calls `ResumeUnitAsync` and ignores its Boolean result, then always calls `ImportPriorityOperations.FocusAsync`. `PrioritizeAsync` calls `FocusAsync` without validating ImportUnit lifecycle.
+
+`ResumeUnitAsync` itself refuses terminal states, but the subsequent focus mutation is not conditioned on that refusal.
+
+Relevant paths:
+
+- `src/Neuterradise.Runtime/Import/ImportUnitControlAuthority.cs`
+- `src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs`
+- `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs`
 
 ### Root cause / failure path
 
-Control selection and control mutation are not one row-versioned decision.
+Lifecycle validation and scheduler-focus persistence are separate writes.
+
+terminal/stale unit → ResumeUnitAsync returns false → caller ignores false → focused-import setting points at unit that cannot resume.
 
 ### Penyelesaian
 
-Control command must:
+Make Start/Prioritize one lifecycle-validated operation:
 
-- read state/version;
-- validate allowed lifecycle;
-- perform priority/start mutation under the same expected version or transactional predicate;
-- no-op/reject stale targets deterministically.
+- validate current state/version;
+- resume only when legal;
+- persist focus only if the unit remains focus-eligible;
+- clear/refuse stale focus deterministically;
+- use transactional/CAS semantics where the lifecycle and focus decision must be atomic.
 
 ### Penanggulangan
 
-Race Publish/Cancel/Fail/Complete against Start/Prioritize.
+Race terminal completion/cancel/failure against Start and Prioritize.
 
 ### Verification
 
-No terminal unit becomes runnable due to stale control.
-
----
+A terminal/missing unit can never become the persisted focused import and cannot alter runnable work through a stale control command.
 
 ## X25 — Optional Stage 2 capabilities can incorrectly gate readiness or terminal failure
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1082,7 +1214,7 @@ Face capability unavailable must not fail an otherwise valid import when face wo
 
 ## X26 — Forced shutdown lacks semantic Shutdown intent and can persist resumable work as CANCELLED
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1125,7 +1257,7 @@ Rules:
 
 ## X30 — CancelRequest cannot interrupt active worker inference promptly
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1158,7 +1290,7 @@ Worker receives CancelRequest while AnalyzeFaces is still active and returns det
 
 ## X31 — ExpectedSha256 is carried to the worker but not proven against analyzed bytes
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1190,7 +1322,7 @@ No hash mismatch may produce Available success.
 
 ## X32 — IdentityBankProvider cache can remain stale after face confirmation changes samples
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1218,7 +1350,7 @@ Identity bank reflects the committed sample set on the next read.
 
 ## X33 — SFace embedding is persisted with YuNet model provenance
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1251,7 +1383,7 @@ Persist one face and inspect detector and embedding provenance independently.
 
 ## X34 — Worker crash breaker can restart indefinitely across successful handshakes
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1279,7 +1411,7 @@ No infinite worker restart loop.
 
 ## X35 — Identity bank can exceed the 4 MiB protocol frame limit
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1311,7 +1443,7 @@ No supported library size can fail merely because one JSON frame exceeded the pr
 
 ## X36 — ReleaseIndex is only guaranteed on the matching happy path
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1339,7 +1471,7 @@ No request-local index leak after terminal completion.
 
 ## X37 — Profile Purge FK closure omits import_assignment_clusters references
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1387,7 +1519,7 @@ Purge cannot delete recovery material and then fail on a previously omitted FK.
 
 ## X38 — Profile hydration does not await UI commit
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1413,7 +1545,7 @@ Load task may complete only after the intended UI generation has committed.
 
 ## X39 — Settings initialization mutates UI-bound state from worker continuation
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1439,7 +1571,7 @@ No cross-thread settings mutation.
 
 ## X40 — Language live state can change before durable persistence succeeds
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1465,7 +1597,7 @@ After any failed persistence attempt, live and durable language authority remain
 
 ## X41 — Latest-value preference writes can mutate ThemeRuntime/resources from a worker
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1495,7 +1627,7 @@ Theme resources never mutate off dispatcher.
 
 ## X42 — Route/lifetime stale callback fencing is incomplete
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1528,7 +1660,7 @@ No stale route can open detail, overwrite selection, or mutate a new surface.
 
 ## X43 — CI NuGet package-root authority conflicts with package verification
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1554,7 +1686,7 @@ Package/build succeeds from a non-default NuGet root without hidden fallback.
 
 ## X44 — Release/package validation does not share one complete required-member contract
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1586,7 +1718,7 @@ No incomplete package reaches artifact/release acceptance.
 
 ## X45 — Update trust lacks independent publisher authenticity
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1617,7 +1749,7 @@ Tampered but self-consistent manifest+package must still fail publisher authenti
 
 ## X46 — Build workflow combines write permission with movable action tags
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1645,7 +1777,7 @@ Publish authority cannot modify build inputs or silently replace the verified ar
 
 ## X47 — Successful update does not have a fully convergent terminal cleanup contract
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1676,7 +1808,7 @@ Successful update converges to one clean terminal topology; interrupted update p
 
 ## X48 — Corrupt persisted updater state/handoff can escape typed recovery classification
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1708,7 +1840,7 @@ Every corrupt state has a deterministic user/recovery outcome.
 
 ## X49 — MinimumCompatibleVersion is declared but not enforced
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1738,7 +1870,7 @@ Trust decision must fail before staging when compatibility is not satisfied.
 
 ## X50 — Canonical toolchain/dependency graph is not reproducibly locked
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1767,45 +1899,41 @@ Rebuild the same SHA from a clean environment and compare provenance/package mem
 
 # 15. Stage 10 — Cross-Domain Adversarial Findings
 
-## X51 — Final-attempt crash can leave a job RUNNABLE but permanently unclaimable
+## X51 — Final-attempt crash does not leave the current JobRecovery path permanently RUNNABLE
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** REJECTED-AS-INDEPENDENT-FINDING
 
-### Temuan
+### Temuan audit sebelumnya
 
-Interrupted RUNNING jobs can be blanket-reconciled to PENDING. Retry-exhaustion logic can then project the job RUNNABLE even when attempt >= max attempts, while claim logic refuses to claim it.
+The earlier ledger claimed that an interrupted final attempt could be reconciled back to PENDING/RUNNABLE while claim logic rejected it because `attempt >= max_attempts`.
 
-### Root cause / failure path
+### Falsification result
 
-Restart reconciliation, retry-budget classification, and scheduler claim eligibility use different transition authorities.
+The current `JobRecovery.ReconcileAsync` does not implement that failure path.
 
-### Penyelesaian
+For an interrupted leased job it first writes `FAILED_RETRYABLE`. It returns a requeue finding only when `job.Attempt < job.MaxAttempts`. On the final/exhausted attempt it calls `TryExhaustRetriesAsync` and returns `JOB_RETRIES_EXHAUSTED` / NeedsAttention instead of deliberately requeueing the job.
 
-Create one atomic interrupted-job reconciliation decision using:
+Relevant path:
 
-- prior durable outcome/checkpoint;
-- current attempt;
-- max attempts;
-- retry classification;
-- control intent.
+- `src/Neuterradise.Runtime/SystemServices/Recovery/JobRecovery.cs`
 
-A retry-exhausted job must become terminal, never PENDING/RUNNABLE.
+### Canonical disposition
+
+Do not implement X51.
+
+Other scheduler/recovery defects remain real, including X19, X21, X26, X53, and X66.
 
 ### Penanggulangan
 
-Crash every attempt including the final attempt. Invariant:
-
-attempt >= max and not explicitly reset ⇒ state is not PENDING/RUNNABLE.
+Retain a regression case for crash-on-final-attempt because it protects this already-correct branch from regression.
 
 ### Verification
 
-Zero permanently unclaimable runnable jobs.
-
----
+A final-attempt interrupted job must not become a claimable/reported RUNNABLE job. X51 remains rejected unless that invariant is later disproved by executable evidence.
 
 ## X52 — Partial startup rollback can release VaultLock before mutation-capable runtime stops
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1835,47 +1963,49 @@ Two-process startup-failure lock test.
 
 ---
 
-## X53 — NeedsAttention conflates advisory issues with writable-startup authority ambiguity
+## X53 — NeedsAttention authority ambiguity can pass startup because the critical gate does not cover path-state/recovery ambiguity
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
-Recovery findings under NeedsAttention can include harmless/retryable maintenance and serious authority ambiguity such as commit conflict, ambiguous recovery, profile rename ambiguity, owner relocation ambiguity, unreadable Trash, pending cancellation, or orphan staging.
+`AppBootstrapper` aborts startup only when `RecoveryResult.HasFatal` is true. `StorageRecovery` can classify path reconciliation conflicts/ambiguity as `NeedsAttention`.
 
-If startup only blocks Fatal findings, the writable shell can open while authority is unresolved.
+The following `CriticalIntegrityGate` checks owner/identity/appearance invariants, but it does not check `path_state = NEEDS_ATTENTION` or equivalent unresolved path-reconciliation authority.
+
+Relevant paths:
+
+- `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`
+- `src/Neuterradise.Runtime/SystemServices/Recovery/StorageRecovery.cs`
+- `src/Neuterradise.Runtime/SystemServices/Lifecycle/CriticalIntegrityGate.cs`
 
 ### Root cause / failure path
 
-Severity/presentation category is used as safety authority.
+Presentation severity (`NeedsAttention`) is also being used as startup-safety policy, while some NeedsAttention codes represent unresolved writable authority.
 
 ### Penyelesaian
 
-Add an explicit safety classification:
+Add explicit startup-safety classification independent of presentation severity:
 
-- Advisory;
-- RetryableMaintenance;
-- BlocksAffectedCapability;
-- BlocksWritableStartup;
-- Fatal.
+- advisory;
+- retryable maintenance;
+- blocks affected capability;
+- blocks writable startup;
+- fatal.
 
-Or add a direct BlocksWritableStartup contract to every recovery finding.
-
-Startup uses aggregate safety, not the label NeedsAttention.
+Path reconciliation ambiguity, unresolved mutation authority, and equivalent states must block writable startup until reconciled or explicitly isolated.
 
 ### Penanggulangan
 
-Maintain a table: recovery code → safety class → writable allowed yes/no. Test every recovery code.
+Maintain a recovery-code → safety-class table and make startup tests cover every code.
 
 ### Verification
 
-All authority ambiguity reaches a non-writable recovery surface.
-
----
+A persisted unresolved path authority cannot reach the normal writable shell merely because its recovery finding is labeled NeedsAttention.
 
 ## X54 — Global mutation command admission remains open while shutdown is already awaiting
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1908,7 +2038,7 @@ Clean marker may be written only after command leases are zero and mutation auth
 
 ## X55 — Application shutdown deadline and updater parent-wait contract are not one end-to-end deadline
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -1940,7 +2070,7 @@ These findings are evidence defects. They are not satisfied by source inspection
 
 ## X56 — Exact-tree canonical build evidence is absent
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
 ### Temuan
 
@@ -1975,7 +2105,7 @@ Canonical Release win-x64 build PASS on the intended fixed SHA.
 
 ## X57 — Package integrity validation is not runtime execution
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
 ### Temuan
 
@@ -2006,7 +2136,7 @@ Extract package to a disposable path and launch from that extracted layout.
 
 ## X58 — No isolated deterministic runtime verification harness
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
 ### Temuan
 
@@ -2040,7 +2170,7 @@ Cold start, warm start, shutdown, and restart in the isolated environment.
 
 ## X59 — Packaged Worker/OpenCV/YuNet/SFace E2E probe is absent
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
 ### Temuan
 
@@ -2076,7 +2206,7 @@ Real packaged inference PASS.
 
 ## X60 — Updater disposable-install replacement/recovery E2E is absent
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
 ### Temuan
 
@@ -2113,7 +2243,7 @@ Every scenario converges to known installed, restored, blocked-recovery, or safe
 
 ## X61 — Stateful lifecycle matrix is not an executable regression gate
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
 ### Temuan
 
@@ -2151,7 +2281,7 @@ All finding-specific guards plus cross-domain matrix PASS on the fixed tree.
 
 ## X62 — Historical ledger provenance gap for X27–X29
 
-**Status:** CLOSED-DOC
+**Status:** CLOSED-DOC / AUDIT-CONTROL
 
 ### Temuan
 
@@ -2173,7 +2303,7 @@ The canonical ledger must contain no X27/X28/X29 finding body, must mark all thr
 
 ## X63 — Historical finding-ID collision in an old Stage 7 response
 
-**Status:** CLOSED-DOC
+**Status:** CLOSED-DOC / AUDIT-CONTROL
 
 ### Temuan
 
@@ -2205,7 +2335,7 @@ The final coverage certification compared the canonical X ledger against the com
 
 ## X64 — Update ZIP extraction safety is not explicit enough for static security proof
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2250,55 +2380,46 @@ The security query must no longer report the extraction sink, and all malicious 
 
 ---
 
-## X65 — Canonical release ZIP directory entries are rejected by the updater
+## X65 — Canonical ZIP directory-entry incompatibility requires executable artifact evidence
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** EXECUTION-EVIDENCE-GAP
 
-### Temuan
+### Historical claim
 
-scripts/package-win-x64.ps1 creates the release ZIP using Compress-Archive over InstallRoot. The package contains directory structure such as workers/, tools/, LICENSES/, and other nested directories. UpdatePackageStager currently rejects every archive entry whose normalized name ends with /.
+The historical register claimed that the ZIP produced by `Compress-Archive` contains explicit directory entries that `UpdatePackageStager` rejects because normalized names ending in `/` are refused.
 
-Relevant paths:
+### Static-source result
 
-- scripts/package-win-x64.ps1
-- src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs
+The stager's rejection rule is visible in source, and the package script uses `Compress-Archive`. Static source alone, however, does not prove the exact entry set emitted by the PowerShell/.NET version used by the canonical Windows packaging environment.
 
-The updater can therefore reject a ZIP produced by the canonical packager.
+Therefore X65 is **not certified as a source defect**.
 
-### Root cause / failure path
+### Required evidence
 
-Packager models directory entries as legitimate ZIP structure. Stager models every ZIP entry as a file and treats a trailing slash as unsafe.
+During X57/X60 package-runtime verification:
 
-canonical package → valid directory entry → normalized.EndsWith('/') → rejection.
+1. build the exact canonical ZIP;
+2. enumerate every central-directory entry;
+3. feed that exact ZIP to `UpdatePackageStager`;
+4. record whether directory entries are emitted and whether staging accepts them.
 
-### Penyelesaian
+### Penyelesaian if reproduced
 
-Teach the stager to distinguish safe directory entries from file entries.
+If the canonical ZIP actually contains explicit directory entries and staging rejects it, update the stager to recognize safe contained directory entries while preserving traversal, duplicate, reparse, and membership protections.
 
-For a directory entry:
-
-- validate the canonical contained path exactly as strictly as a file;
-- require directory-entry semantics (no file payload authority);
-- create/recognize the directory safely;
-- do not add the directory to file-membership/hash validation;
-- reject file/directory canonical-path collisions;
-- reject unsafe/traversing/rooted/reparse escapes.
-
-For a file entry, retain all current size, compression-ratio, duplicate-name, containment, and CreateNew rules.
+If the canonical ZIP contains no such entries or the stager accepts the artifact, close X65 as NOT-REPRODUCED.
 
 ### Penanggulangan
 
-The exact ZIP emitted by package-win-x64.ps1 must be fed into UpdatePackageStager during release verification. Include nested empty/non-empty directories and malicious directory names.
+The exact canonical release ZIP must remain an input to updater E2E verification so packaging and staging can never silently diverge.
 
 ### Verification
 
-Canonical ZIP → stager → manifest validation must PASS without special repacking, while unsafe directory entries remain rejected.
-
----
+X65 is resolved only by artifact execution evidence, not by source inference.
 
 ## X66 — Cancellation terminal projection is delayed until recovery polling on cancellation paths
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2342,7 +2463,7 @@ Observe durable job cancellation and its dependent/capability projection in the 
 
 ## X67 — Single-click Media Detail is intentionally delayed by the Windows double-click timeout
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2388,7 +2509,7 @@ The first-click internal action occurs before the system double-click timeout ex
 
 ## X68 — Shell work/status projection is fixed-polling at 750 ms
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2424,7 +2545,7 @@ A durable status change becomes observable without waiting 750 ms; disabling the
 
 ## X69 — Shared reused-asset Stage-2 work has no durable per-ImportUnit scheduling-interest model
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2476,7 +2597,7 @@ Focused import priority affects the shared work it actually waits on, without al
 
 ## X70 — Clipboard retry blocks the UI thread for up to approximately 200 ms
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2513,7 +2634,7 @@ No UI-thread sleep occurs and the UI remains responsive for the full retry windo
 
 ## X71 — FFmpeg build artifact availability depends on an external upstream release
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2552,7 +2673,7 @@ The exact pinned FFmpeg bytes remain reproducibly obtainable from an authority c
 
 ## X72 — REUSE authority is not revalidated at the commit boundary
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2598,7 +2719,7 @@ A stale REUSE decision can never retire the only valid candidate and then silent
 
 ## X73 — Cancelling one import can trash an asset currently reused by another import
 
-**Status:** OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
 
 ### Temuan
 
@@ -2864,8 +2985,9 @@ Target:
 - X49;
 - X50;
 - X64;
-- X65;
 - X71.
+
+X65 is an execution-evidence task and belongs to R8, not source remediation unless reproduced.
 
 Reason: later fixes depend on stable appearance, deployment, model, path-job, package, compatibility, and build authorities.
 
@@ -2875,10 +2997,13 @@ Do not start broad runtime acceptance until these authorities are coherent.
 
 Target:
 
-- X09–X18;
+- X09–X14;
+- X17;
 - X69;
 - X72;
 - X73.
+
+Do not implement X15, X16, or X18; they are rejected by Section 4A falsification.
 
 Implement as a coordinated storage/import pass, not ten isolated local patches.
 
@@ -2911,10 +3036,12 @@ Acceptance:
 Target:
 
 - X19–X26;
-- X51–X55;
+- X52–X55;
 - X66;
 - X69;
 - X73.
+
+Do not implement X51; it is rejected by Section 4A falsification.
 
 Required first-class concepts:
 
@@ -2984,7 +3111,8 @@ Acceptance:
 
 Target:
 
-- X56–X61.
+- X56–X61;
+- X65.
 
 This phase is mandatory after source remediation.
 
@@ -3049,7 +3177,7 @@ Never replace the original Temuan/Penyelesaian/Penanggulangan text with only the
 
 NeuTerradise may be described as remediated against this Deep Audit only when all of the following are true:
 
-1. All remediation/evidence findings X01–X61 and X64–X73 are SOURCE-CLOSED or explicitly superseded by a documented X74+ finding with evidence.
+1. Every CONFIRMED-SOURCE and CONFIRMED-HARDENING record is SOURCE-CLOSED (or evidence-backed superseded), every EXECUTION-EVIDENCE-GAP is resolved by the required execution evidence, and REJECTED records remain excluded from implementation.
 2. X62–X63 remain CLOSED-DOC audit-control records.
 3. X27–X29 remain RESERVED.
 4. All DB trigger/FK invariants remain active.
@@ -3087,4 +3215,4 @@ The correct next action is implementation against this document, not another ful
 
 If implementation reveals a genuinely distinct defect outside the root causes of X01–X73, allocate X74 and continue monotonically. If an observation is another manifestation of an existing root cause, attach it to that existing finding instead of creating a duplicate.
 
-**Canonical conclusion: Deep Audit Stage 1–12 CLOSED-DOC with final coverage certification; remediation and executable verification remain open. Full source re-audit of the unchanged frozen baseline is not required.**
+**Canonical conclusion: Deep Audit Stage 1–12 is TRUST-CERTIFIED at the static-source level after falsification of the historical ledger. Remediation and executable verification remain open. Full source re-audit of the unchanged frozen baseline is not required; implementation must follow the classifications in Section 4A.**
