@@ -338,6 +338,64 @@ public sealed class SchedulerReads
         return await ReadGuidListAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetCancellableRunningJobIdsForImportUnitAsync(
+        Guid importUnitId,
+        CancellationToken cancellationToken = default)
+    {
+        if (importUnitId == Guid.Empty) return [];
+
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            WITH unit_assets(asset_id) AS (
+                SELECT candidate_asset_id
+                FROM import_items
+                WHERE import_unit_id = $unitId
+                  AND candidate_asset_id IS NOT NULL
+                UNION
+                SELECT asset_id
+                FROM import_asset_interests
+                WHERE import_unit_id = $unitId
+            )
+            SELECT j.job_id
+            FROM unit_assets mine
+            JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = mine.asset_id
+            WHERE j.state = 'RUNNING'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_items other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.import_unit_id <> $unitId
+                    AND (other.candidate_asset_id = mine.asset_id OR other.reused_asset_id = mine.asset_id)
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.import_unit_id <> $unitId
+                    AND other.asset_id = mine.asset_id
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              )
+            UNION
+            SELECT job_id
+            FROM jobs
+            WHERE owner_type = 'ImportUnit'
+              AND owner_id = $unitId
+              AND state = 'RUNNING';
+            """;
+        command.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));
+        return await ReadGuidListAsync(command, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<int> CountRunningJobsForImportUnitAsync(
         Guid importUnitId,
         CancellationToken cancellationToken = default)

@@ -263,6 +263,10 @@ public static class ModelPackageDiscovery
         {
             return Failure(format, primaryComp, DependencyDiscoveryState.FailedTerminal);
         }
+        catch (UnsupportedDependencyReferenceException)
+        {
+            return Failure(format, primaryComp, DependencyDiscoveryState.Unsupported);
+        }
         catch (FormatException)
         {
             return Failure(format, primaryComp, DependencyDiscoveryState.FailedTerminal);
@@ -406,12 +410,22 @@ public static class ModelPackageDiscovery
 
     private static bool AddSafeUri(string? uri, bool unescape, Dictionary<string, string> deps)
     {
-        if (string.IsNullOrWhiteSpace(uri)
-            || uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
-            || uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(uri))
         {
             return false;
+        }
+
+        if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            // Embedded payloads are self-contained and intentionally do not create a sidecar.
+            return false;
+        }
+
+        if (uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnsupportedDependencyReferenceException(
+                "Remote model dependencies are not supported as durable package authority.");
         }
 
         var candidate = (unescape ? Uri.UnescapeDataString(uri) : uri).Trim().Replace('\\', '/');
@@ -419,16 +433,24 @@ public static class ModelPackageDiscovery
             || candidate.Contains(':')
             || candidate.Split('/').Any(segment => segment is ".." or "."))
         {
-            return false;
+            throw new FormatException("Model dependency reference is outside the package boundary.");
         }
 
         var normalized = ModelPackagePlan.NormalizeComponentPath(candidate);
         if (string.IsNullOrEmpty(normalized))
         {
-            return false;
+            throw new FormatException("Model dependency reference is empty after normalization.");
         }
 
         deps[candidate] = normalized;
         return true;
+    }
+
+    private sealed class UnsupportedDependencyReferenceException : Exception
+    {
+        public UnsupportedDependencyReferenceException(string message)
+            : base(message)
+        {
+        }
     }
 }

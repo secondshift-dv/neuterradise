@@ -461,6 +461,63 @@ public sealed class JobWrites
             cancellationToken,
             ("$cancelledAtMs", DbTime.Format(cancelledAtUtc)));
 
+    public async Task<int> CancelIdleAssetForImportUnitAsync(
+        Guid importUnitId,
+        Guid assetId,
+        DateTimeOffset cancelledAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(importUnitId, nameof(importUnitId));
+        EnsureNonEmpty(assetId, nameof(assetId));
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection);
+
+        await using var update = transaction.CreateCommand(
+            """
+            UPDATE jobs
+            SET state = 'CANCELLED',
+                not_before_ms = NULL,
+                completed_at_ms = $cancelledAtMs,
+                row_version = row_version + 1
+            WHERE owner_type = 'Asset'
+              AND owner_id = $assetId
+              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_items other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.import_unit_id <> $unitId
+                    AND (other.candidate_asset_id = $assetId OR other.reused_asset_id = $assetId)
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.import_unit_id <> $unitId
+                    AND other.asset_id = $assetId
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              );
+            """);
+        update.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));
+        update.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+        update.Parameters.AddWithValue("$cancelledAtMs", DbTime.Format(cancelledAtUtc));
+        var changed = await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return changed;
+    }
+
     public async Task<bool> TryRescheduleRetryAsync(
         Guid jobId,
         long expectedRowVersion,

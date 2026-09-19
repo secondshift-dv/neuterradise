@@ -434,22 +434,37 @@ public sealed class SourceCleanupExecutor
         FileStream? stream = null;
         try
         {
+            if (!SourceIdentityHelper.TryOpenForVerifiedDelete(
+                    filePath,
+                    out var deleteHandle,
+                    out var openError)
+                || deleteHandle is null)
+            {
+                return openError switch
+                {
+                    2 or 3 => (DeleteOutcome.Missing, "Source disappeared before verified deletion."),
+                    5 => (DeleteOutcome.Denied, "DELETE access was denied opening the source file."),
+                    32 or 33 => (DeleteOutcome.Locked, "Source file is locked against verified deletion."),
+                    _ => (DeleteOutcome.Failed, $"Opening the source with DELETE authority failed with Win32 error {openError}."),
+                };
+            }
+
             try
             {
                 stream = new FileStream(
-                    filePath,
-                    FileMode.Open,
+                    deleteHandle,
                     FileAccess.Read,
-                    FileShare.Read | FileShare.Delete,
                     bufferSize: 64 * 1024,
-                    useAsync: true);
+                    isAsync: false);
             }
             catch (UnauthorizedAccessException)
             {
+                deleteHandle.Dispose();
                 return (DeleteOutcome.Denied, "Access denied opening source file.");
             }
             catch (IOException)
             {
+                deleteHandle.Dispose();
                 return (DeleteOutcome.Locked, "Source file is locked.");
             }
 

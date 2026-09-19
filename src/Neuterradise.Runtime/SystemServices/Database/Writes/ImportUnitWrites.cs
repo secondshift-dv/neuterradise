@@ -76,7 +76,22 @@ public sealed class ImportUnitWrites
         var importWrites = new ImportWrites(_catalog, _timeProvider);
         var cancelledJobs = 0;
         foreach (var scope in state.JobScopes)
-            cancelledJobs += await jobWrites.CancelIdleAsync(null, scope.OwnerType, scope.OwnerId, now, cancellationToken).ConfigureAwait(false);
+        {
+            cancelledJobs += string.Equals(scope.OwnerType, "Asset", StringComparison.Ordinal)
+                ? await jobWrites.CancelIdleAssetForImportUnitAsync(
+                        unitId,
+                        scope.OwnerId,
+                        now,
+                        cancellationToken)
+                    .ConfigureAwait(false)
+                : await jobWrites.CancelIdleAsync(
+                        null,
+                        scope.OwnerType,
+                        scope.OwnerId,
+                        now,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+        }
         var runningJobs = await CountRunningScopedJobsAsync(state.JobScopes, cancellationToken).ConfigureAwait(false);
 
         // Pre-Stage1: retire unadmitted candidate assets.

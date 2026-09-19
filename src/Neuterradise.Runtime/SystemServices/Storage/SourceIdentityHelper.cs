@@ -39,6 +39,46 @@ public static class SourceIdentityHelper
         }
     }
 
+    public static bool TryOpenForVerifiedDelete(
+        string filePath,
+        out SafeFileHandle? handle,
+        out int win32Error)
+    {
+        handle = null;
+        win32Error = 0;
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(filePath);
+            var opened = CreateFileW(
+                fullPath,
+                GenericRead | DeleteAccess,
+                FileShareRead | FileShareWrite | FileShareDelete,
+                IntPtr.Zero,
+                OpenExisting,
+                FileAttributeNormal,
+                IntPtr.Zero);
+
+            if (opened.IsInvalid)
+            {
+                win32Error = Marshal.GetLastWin32Error();
+                opened.Dispose();
+                return false;
+            }
+
+            handle = opened;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static bool VerifyIdentity(string? capturedJson, string currentFilePath)
     {
         if (capturedJson is null || !OperatingSystem.IsWindows())
@@ -140,6 +180,24 @@ public static class SourceIdentityHelper
             lastWrite);
         return true;
     }
+
+    private const uint GenericRead = 0x80000000;
+    private const uint DeleteAccess = 0x00010000;
+    private const uint FileShareRead = 0x00000001;
+    private const uint FileShareWrite = 0x00000002;
+    private const uint FileShareDelete = 0x00000004;
+    private const uint OpenExisting = 3;
+    private const uint FileAttributeNormal = 0x00000080;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

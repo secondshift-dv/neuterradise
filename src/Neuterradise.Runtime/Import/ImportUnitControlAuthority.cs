@@ -192,9 +192,9 @@ public sealed class ImportUnitControlAuthority
         {
             while (true)
             {
-                var runningCount = await _schedulerReads
-                    .CountRunningJobsForImportUnitAsync(unitId, linked.Token)
-                    .ConfigureAwait(false);
+                var runningCount = (await _schedulerReads
+                    .GetCancellableRunningJobIdsForImportUnitAsync(unitId, linked.Token)
+                    .ConfigureAwait(false)).Count;
 
                 if (runningCount == 0)
                 {
@@ -221,9 +221,13 @@ public sealed class ImportUnitControlAuthority
         JobControlIntent intent,
         CancellationToken cancellationToken)
     {
-        var runningJobIds = await _schedulerReads
-            .GetRunningJobIdsForImportUnitAsync(unitId, cancellationToken)
-            .ConfigureAwait(false);
+        var runningJobIds = intent == JobControlIntent.Cancel
+            ? await _schedulerReads
+                .GetCancellableRunningJobIdsForImportUnitAsync(unitId, cancellationToken)
+                .ConfigureAwait(false)
+            : await _schedulerReads
+                .GetRunningJobIdsForImportUnitAsync(unitId, cancellationToken)
+                .ConfigureAwait(false);
 
         foreach (var jobId in runningJobIds)
         {
