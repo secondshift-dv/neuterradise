@@ -887,6 +887,18 @@ Adversarial rename/replace tests against the actual Windows cleanup implementati
 **Residual risk/blocker:** Windows rename/replace race execution remains R8 evidence.
 
 
+
+### R2 corrective closure record — 2026-09-19
+
+**Reopen cause:** post-implementation review proved that the verified handle had only read access; `FILE_SHARE_DELETE` permits sharing but does not grant Windows `DELETE` access, so handle-bound deletion could fail even after identity verification.  
+**Corrective SHAs:** `4915d446219a44573fd03f0ee8ad163d422e2bf7`; `4d90b70bedea340b063c0b26f3bb1102be1ff0e5`  
+**Corrective paths:** `SourceIdentityHelper.cs`; `SourceCleanupExecutor.cs`  
+**Corrective authority:** destructive cleanup now opens the exact source object with `GENERIC_READ | DELETE`, permits read/delete sharing but excludes concurrent writers, hashes and validates stable file identity on that same handle, then applies `FileDispositionInfo` to that handle. Missing DELETE authority, identity mismatch, write-sharing conflict, replacement, or content drift fails closed and preserves source.  
+**Revalidation:** the prior pathname/object race is closed at source level; X11 package cleanup consumes the same corrected primitive.  
+**Source status:** SOURCE-CLOSED (CORRECTED)  
+**Runtime status:** NOT-YET-VERIFIED — adversarial Windows rename/replace/delete execution remains R8 evidence.
+
+
 ---
 
 ## X11 — REUSE package cleanup reads component authority from the reused target instead of the candidate source
@@ -1006,6 +1018,18 @@ Every injected interruption must restart to either a valid resumed DestinationPr
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** executable provisioning crash matrix remains R8 evidence.
 
+
+### R2 corrective closure record — 2026-09-19
+
+**Reopen cause:** an already-existing final folder with missing/malformed manifest could still be adopted, and manifest-write failure/cancellation was returned as a status rather than necessarily throwing before publication.  
+**Corrective SHAs:** `b8e2721f103efe1c9de47f9229f489bf4fa450bc`; `45f226f47c7e1ff924248a43108d52a61733acda`  
+**Corrective path:** `ImportCommitCoordinator.cs`  
+**Corrective authority:** provisioning uses an operation-scoped `.<operationId>.provisioning` directory, writes and verifies `profile.json` there, requires a successful manifest-write result, honors cancellation before publication, and atomically renames staging to the persisted final folder. An existing final folder is accepted only when a valid manifest names the same Profile; a concurrent winner is revalidated the same way.  
+**Revalidation:** a foreign empty/malformed directory can no longer become owned merely because its path matches the persisted plan, while crash replay retains an operation-owned staging artifact that can safely converge.  
+**Source status:** SOURCE-CLOSED (CORRECTED)  
+**Runtime status:** NOT-YET-VERIFIED — kill-boundary filesystem execution remains R8 evidence.
+
+
 ---
 
 ## X13 — Health/integrity evaluation is package-unaware
@@ -1101,6 +1125,18 @@ Known dependency fixtures with intentionally broken discovery.
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** executable parser/package fixture matrix remains R8 evidence.
+
+
+
+### R2 corrective closure record — 2026-09-19
+
+**Reopen cause:** `AddSafeUri` returned `false` for unsafe/remote references and GLTF/DAE callers could silently interpret the omitted reference set as dependency-free.  
+**Corrective SHA:** `4915d446219a44573fd03f0ee8ad163d422e2bf7`  
+**Corrective path:** `ModelPackageContracts.cs`  
+**Corrective authority:** embedded `data:` URIs remain explicitly self-contained; remote HTTP(S) references produce `UNSUPPORTED`; rooted/traversal/invalid package references produce terminal discovery failure. Rejected external references therefore cannot disappear into `SELF_CONTAINED + COMPLETE`.  
+**Revalidation:** complete/self-contained authority is emitted only after every non-embedded dependency reference is accepted into canonical discovery.  
+**Source status:** SOURCE-CLOSED (CORRECTED)  
+**Runtime status:** NOT-YET-VERIFIED — malformed/remote/traversal fixtures remain R8 evidence.
 
 
 ---
@@ -2975,6 +3011,18 @@ Focused import priority affects the shared work it actually waits on, without al
 **Residual risk/blocker:** R4 must revalidate scheduler-concurrency integration without reimplementing X69.
 
 
+
+### R2 corrective closure record — 2026-09-19
+
+**Reopen cause:** running-job cancellation had shared-consumer checks, but idle Asset jobs still used generic scoped cancellation and reused Assets were absent from the cancellation scope snapshot. Paused consumers also had to protect shared work from Cancel even though Pause itself may stop exclusive running work.  
+**Corrective SHAs:** `4915d446219a44573fd03f0ee8ad163d422e2bf7`; `9279e8fb7789dfe4b089182578cfa2397c535e8c`  
+**Corrective paths:** `JobWrites.cs`; `SchedulerReads.cs`; `ImportUnitWrites.cs`; `ImportUnitControlAuthority.cs`  
+**Corrective authority:** idle Asset cancellation is now ImportUnit-aware and refuses to cancel while any other non-terminal candidate/reuse/interest consumer exists; cancellation-specific running-job selection uses the same global consumer authority and treats paused consumers as live protection; reused Assets are included in the cancelling unit's Asset scopes. Pause and Cancel deliberately use different running-work eligibility.  
+**Revalidation:** one import can no longer cancel PENDING/RUNNABLE/PAUSED/FAILED_RETRYABLE or RUNNING shared work still owned by another live consumer.  
+**Source status:** SOURCE-CLOSED (CORRECTED)  
+**Runtime status:** NOT-YET-VERIFIED — multi-consumer scheduler execution remains R4/R8 evidence.
+
+
 ---
 
 ## X70 — Clipboard retry blocks the UI thread for up to approximately 200 ms
@@ -3127,6 +3175,18 @@ A stale REUSE decision can never retire the only valid candidate and then silent
 **Residual risk/blocker:** executable stale-REUSE concurrency matrix remains R8 evidence.
 
 
+
+### R2 corrective closure record — 2026-09-19
+
+**Reopen cause:** destination association was created before the final transactional REUSE revalidation/retirement, so a late authority failure could leave a MANUAL relation even though DomainAuthorityCommitted was blocked.  
+**Corrective SHAs:** `b8e2721f103efe1c9de47f9229f489bf4fa450bc`; `4d90b70bedea340b063c0b26f3bb1102be1ff0e5`; `45f226f47c7e1ff924248a43108d52a61733acda`; `4841970a67bc4e3365abea8f627ff7c5b961f75c`  
+**Corrective paths:** `ImportWrites.cs`; `ImportCommitCoordinator.cs`  
+**Corrective authority:** final exact-duplicate revalidation, active managed reused-Asset authority, cancellation/Trash reservation exclusion, destination-profile validity, import-attributed MANUAL association, publication-delta proof, activity logging, Candidate retirement, and Candidate idle-job cancellation now commit in one Catalog transaction. The coordinator records REUSE state only after that transaction succeeds.  
+**Revalidation:** reservation acquisition and REUSE are serialized by the write coordinator; a reserved/trashed/stale target returns failure before association/retirement, while any newly inserted MANUAL relation must carry this ImportUnit's `publication_import_unit_id` before Candidate retirement is allowed.  
+**Source status:** SOURCE-CLOSED (CORRECTED)  
+**Runtime status:** NOT-YET-VERIFIED — concurrent stale-REUSE mutation execution remains R8 evidence.
+
+
 ---
 
 ## X73 — Cancelling one import can trash an asset currently reused by another import
@@ -3193,6 +3253,18 @@ Cancelling one ImportUnit can never retire/trash an asset that another live impo
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** R4 must revalidate scheduler/cancellation concurrency; R8 owns executable Trash/cancel evidence.
+
+
+
+### R2 corrective closure record — 2026-09-19
+
+**Reopen cause:** exclusivity was initially read before Trash preparation/commit, leaving a TOCTOU window in which a second consumer or durable relation could appear; same-destination relations also needed attribution-based, not merely profile-id-based, ownership logic.  
+**Corrective SHAs:** `4915d446219a44573fd03f0ee8ad163d422e2bf7`; `b8e2721f103efe1c9de47f9229f489bf4fa450bc`; `9279e8fb7789dfe4b089182578cfa2397c535e8c`; `4d90b70bedea340b063c0b26f3bb1102be1ff0e5`  
+**Corrective paths:** `ImportCancellationSettlement.cs`; `ImportUnitWrites.cs`; `TrashCoordinator.cs`; migrations `0012_r2_shared_rollback_reservation.sql` and `0013_r2_cancel_asset_reservation.sql`  
+**Corrective authority:** cancellation first acquires a unique durable `import_cancel_asset_reservations` row in the same serialized write transaction that proves the Asset is still ACTIVE, belongs to the cancelled unit, has no other live candidate/reuse/interest consumer, and has no published or foreign import-attributed Profile relation. Reservation triggers prevent new interests, REUSE selection, or Profile relations until rollback settlement. Rollback-specific Trash revalidates eligibility before physical movement and again inside the final Trash DB transaction. If another authority wins before reservation, the Asset is preserved and cancellation removes only its own unpublished delta.  
+**Revalidation:** the A-creates-X/B-reuses-X race, paused consumer, new relation, and consumer-appears-during-settlement windows now have one serialized winner instead of read-then-trash TOCTOU. Reservations are released only with `rollback_settled=1`.  
+**Source status:** SOURCE-CLOSED (CORRECTED)  
+**Runtime status:** NOT-YET-VERIFIED — concurrent cancellation/Trash execution remains R4/R8 evidence.
 
 
 ---
@@ -3431,7 +3503,7 @@ Do not start broad runtime acceptance until these authorities are coherent.
 
 ## Phase R2 — Fix storage/import durability
 
-**Implementation status:** SOURCE-CLOSED at `01c4e45e74536cf7a90ea45eaadd54a4819c08a5`. Executable verification remains owned by R4 integration companions and R8; this source-closure statement does not claim runtime verification.
+**Implementation status:** SOURCE-CLOSED after corrective revalidation through `4841970a67bc4e3365abea8f627ff7c5b961f75c`. The earlier `acb8ed0613243b19570d37213425de25f2e4d239` ledger closure was reopened by source review for X10, X12, X14, X69, X72, and X73; the corrective records in those findings are authoritative. Executable verification remains owned by R4 integration companions and R8; this source-closure statement does not claim runtime verification.
 
 Target:
 
