@@ -787,7 +787,7 @@ Automated restart matrix for Profile Trash and Profile Restore.
 
 ## X09 — Same-volume replay misclassifies an operation-owned target as UnexpectedTarget
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -816,11 +816,27 @@ Crash at each same-volume move/checkpoint boundary for COPY and MOVE; restart mu
 
 Repeat replay multiple times and assert idempotence.
 
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 753ba292d3ef4317658dcb9ddaebeb7eedd58cca  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Storage/ManagedMoveExecutor.cs`  
+**Traceability checked:** persisted same-volume move plan → `ResolveTargetAuthorityAsync` → existing-target byte verification → placement checkpoint; cross-volume target-race replay follows the same verification-before-convergence rule.  
+**Root-cause correction:** an existing target is no longer classified as `UnexpectedTarget` merely because the external source still exists. When durable target authority belongs to the same Asset, replay verifies exact bytes and checkpoints the already-published target; another Asset remains a collision.  
+**Regression guard:** same-Asset replay converges only after expected length/SHA verification; other-Asset authority or byte mismatch remains fail-closed.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; crash-injection execution remains R8.  
+**Dependency findings checked:** X12, X17  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable same-volume/cross-volume crash matrix remains R8 evidence.
+
+
 ---
 
 ## X10 — MOVE source deletion is fail-open when stable object identity is unavailable
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -855,11 +871,27 @@ Never delete an unproven object.
 
 Adversarial rename/replace tests against the actual Windows cleanup implementation.
 
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 8b12069f227dbd1dcf91397cfdaba30c7d112722  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Storage/SourceIdentityHelper.cs`; `src/Neuterradise.Runtime/SystemServices/Storage/SourceCleanupExecutor.cs`  
+**Traceability checked:** intake identity capture → persisted identity JSON → cleanup open handle → content verification → Windows volume/file-index verification on that handle → handle-bound delete disposition.  
+**Root-cause correction:** MOVE deletion now requires stable Windows file-object identity. Path/timestamp/hash equality alone cannot authorize deletion, and the verified open handle is the object marked for deletion. Missing identity preserves source.  
+**Regression guard:** null identity, pathname replacement, object-identity mismatch, hash/length mismatch, Vault-contained source, access denial, and locking all prevent destructive cleanup.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; adversarial filesystem execution remains R8.  
+**Dependency findings checked:** X11, X14  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Windows rename/replace race execution remains R8 evidence.
+
+
 ---
 
 ## X11 — REUSE package cleanup reads component authority from the reused target instead of the candidate source
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -905,9 +937,25 @@ Regression matrix:
 
 For REUSE+MOVE, every deleted external path must originate from the current candidate's persisted component authority, never from the reused library asset's historical source metadata.
 
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 8b12069f227dbd1dcf91397cfdaba30c7d112722  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Storage/SourceCleanupExecutor.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportWrites.cs`  
+**Traceability checked:** ImportItem CandidateAssetId/ReusedAssetId → candidate component authority → normalized component reconciliation with managed/reused target → per-component managed verification → candidate-source cleanup state.  
+**Root-cause correction:** REUSE cleanup obtains destructive source paths/identities only from the current Candidate. The reused Asset supplies managed-destination verification only. Candidate and target component sets must reconcile by normalized path, length, and SHA before deletion.  
+**Regression guard:** incomplete component authority, component-set mismatch, Vault-owned source member, invalid managed path, or byte mismatch preserves source/fails closed.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; package MOVE/REUSE execution remains R8.  
+**Dependency findings checked:** X10, X13, X14, X72  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable multi-component cleanup matrix remains R8 evidence.
+
+---
+
 ## X12 — Profile-folder filesystem side effects occur before DestinationPrepared is durably checkpointed
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -944,9 +992,25 @@ Crash/cancel injection before directory creation, after directory creation, afte
 
 Every injected interruption must restart to either a valid resumed DestinationPrepared state or a deterministic rollback without orphan profile material.
 
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 753ba292d3ef4317658dcb9ddaebeb7eedd58cca  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs`  
+**Traceability checked:** destination Profile/token allocation → persisted profile-folder target in CommitState → provisioning-intent persistence → filesystem creation/manifest write → provisioning completion → DestinationPrepared progression.  
+**Root-cause correction:** Profile-folder mutation now has a durable replayable target and explicit provisioning intent before physical side effects. Re-entry uses persisted folder authority and rejects a valid manifest owned by another Profile.  
+**Regression guard:** retry cannot silently allocate a different folder; owned existing material converges, conflicting ownership blocks instead of overwriting.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; kill-boundary execution remains R8.  
+**Dependency findings checked:** X09, X17  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable provisioning crash matrix remains R8 evidence.
+
+---
+
 ## X13 — Health/integrity evaluation is package-unaware
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -973,11 +1037,27 @@ Negative tests remove, alter, rename, or move one component at a time. Asset hea
 
 Health check against real multi-component assets after restart.
 
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 9c2e79edbfa7744dd02f7e1032dd2c1b01fc7bb4  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/Maintenance/LibraryHealthEvaluator.cs`  
+**Traceability checked:** ACTIVE Model Asset → durable `asset_components` → canonical package directory → each component containment/path → existence → length → Deep-mode SHA aggregation.  
+**Root-cause correction:** health no longer treats a multi-component model as one primary file. Every required durable package member is evaluated and any missing/displaced/mismatched member degrades the owning Asset.  
+**Regression guard:** invalid containment, missing file, length mismatch, and Deep SHA mismatch emit deterministic package findings.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; real-package restart scan remains R8.  
+**Dependency findings checked:** X11, X14, X17  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable package-health matrix remains R8 evidence.
+
+
 ---
 
 ## X14 — Dependency discovery can fail open
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1006,6 +1086,22 @@ Parser errors, permission failures, malformed package metadata, unsupported refe
 ### Verification
 
 Known dependency fixtures with intentionally broken discovery.
+
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 2eded5f62b403b33b4fc2d4bf05738fc739fcf2b  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0011_r2_import_durability_authority.sql`; `src/Neuterradise.Runtime/Media/Model/ModelPackageContracts.cs`; `src/Neuterradise.Runtime/SystemServices/Database/DbEnum.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/AssetWrites.cs`; `src/Neuterradise.Runtime/Import/Preparation/ImportPreparationCoordinator.cs`  
+**Traceability checked:** model discovery/parser → explicit discovery state → persisted `assets.dependency_discovery_state` plus dependency status/bundle hash → cleanup/verification consumers.  
+**Root-cause correction:** parser I/O/format failures and unsupported discovery can no longer collapse into SELF_CONTAINED. Discovery truth is persisted separately as COMPLETE/MISSING/UNKNOWN/FAILED_RETRYABLE/FAILED_TERMINAL/UNSUPPORTED; bundle authority exists only after complete discovery.  
+**Regression guard:** malformed discovery, inaccessible input, unsupported package discovery, missing dependencies, and complete packages remain distinguishable after restart.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; parser fixture execution remains R8.  
+**Dependency findings checked:** X10, X11, X13, X15, X16  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable parser/package fixture matrix remains R8 evidence.
+
 
 ---
 
@@ -1082,7 +1178,7 @@ X16 is excluded from remediation counts and must never be reintroduced unless ne
 
 ## X17 — Some placement paths bypass the collision-safe allocator
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1108,6 +1204,22 @@ Make collision-safe allocation the canonical public placement API for any new ma
 ### Verification
 
 No production placement caller may materialize a path without collision authority.
+
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 753ba292d3ef4317658dcb9ddaebeb7eedd58cca; 9c2e79edbfa7744dd02f7e1032dd2c1b01fc7bb4; b7f403d27950b5e1ad3262b58d8e3ab611ebf242; 847049101982640d9c1b034fb63eb1e608e0beb7; 288c78be05513302bc9e634f5026130f80e22652  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Storage/ManagedPathPlanner.cs`; `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs`; `src/Neuterradise.Runtime/Media/MediaOperations.cs`; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs`; `src/Neuterradise.Runtime/Profiles/ProfileOperations.cs`; `src/Neuterradise.Runtime/Profiles/UnknownResolutionOperations.cs`; `src/Neuterradise.Runtime/SystemServices/Storage/ProfileManifestWriter.cs`  
+**Traceability checked:** new Profile folder, imported simple Asset, model package, owner relocation, restore, profile rename, Unknown-resolution relocation, and manifest-repair paths. Raw planning remains prediction/inspection-only where no new physical authority is allocated.  
+**Root-cause correction:** collision-safe allocators now exist for Profile, Asset, model package, and Hero identities, and R2 physical-authority creation/relocation callers use allocator/occupied-path authority instead of raw deterministic construction. Manifest repair remains separate from placement allocation.  
+**Regression guard:** occupied catalog current/target paths plus existing filesystem entries force deterministic suffix expansion; another entity's existing path is never selected merely because the human-readable name matches.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/caller trace completed; collision execution remains R8.  
+**Dependency findings checked:** X04, X05, X09, X12, X13  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable Unicode/case/package/Hero collision matrix remains R8 evidence.
+
 
 ---
 
@@ -2799,7 +2911,7 @@ A durable status change becomes observable without waiting 750 ms; disabling the
 
 ## X69 — Shared reused-asset Stage-2 work has no durable per-ImportUnit scheduling-interest model
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2846,6 +2958,22 @@ Two-or-more ImportUnits sharing the same reused asset:
 ### Verification
 
 Focused import priority affects the shared work it actually waits on, without allowing one consumer to cancel or corrupt another consumer's job.
+
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 2eded5f62b403b33b4fc2d4bf05738fc739fcf2b; 9c2e79edbfa7744dd02f7e1032dd2c1b01fc7bb4; 061a9de2e0795c38f7a3ccd3edec71adfd1110fa; 01c4e45e74536cf7a90ea45eaadd54a4819c08a5  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0011_r2_import_durability_authority.sql`; `src/Neuterradise.Runtime/Import/Preparation/Stage2PreparationCoordinator.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Reads/SchedulerReads.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportWrites.cs`  
+**Traceability checked:** effective Candidate/Reused Asset → durable `import_asset_interests` → shared job creation/focused-priority aggregation → live Pause/Resume → running-job cancellation eligibility → terminal/cancel-settlement priority recompute → interest release → restart reconciliation.  
+**Root-cause correction:** shared Asset-owned Stage-2 work now has durable many-to-many ImportUnit interest. Priority is the deterministic maximum of live unpaused consumers; one paused/cancelled consumer cannot stop work still required by another; terminal/cancel-settled units release their rows.  
+**Regression guard:** focus, pause/resume, cancellation, terminal completion, and restart all consume the same durable interest table and exclude terminal consumers from scheduling authority.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; multi-consumer scheduler execution remains R4/R8 integration evidence.  
+**Dependency findings checked:** X66, X73  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R4 must revalidate scheduler-concurrency integration without reimplementing X69.
+
 
 ---
 
@@ -2941,7 +3069,7 @@ The exact pinned FFmpeg bytes remain reproducibly obtainable from an authority c
 **Residual risk/blocker:** No R1 source/artifact blocker; clean-cache canonical package execution remains R8.
 ## X72 — REUSE authority is not revalidated at the commit boundary
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2983,11 +3111,27 @@ Race tests: trash/retire/replace/reassign the reused asset between Verify and co
 
 A stale REUSE decision can never retire the only valid candidate and then silently commit against an invalid reused authority.
 
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 8b12069f227dbd1dcf91397cfdaba30c7d112722; 061a9de2e0795c38f7a3ccd3edec71adfd1110fa  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportWrites.cs`; `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs`  
+**Traceability checked:** reviewed REUSE decision → whole-checkpoint prevalidation → ACTIVE managed Asset/package identity comparison → destination association → conditional Candidate retirement → domain checkpoint.  
+**Root-cause correction:** every REUSE is revalidated before DomainAuthorityCommitted mutation, and Candidate retirement requires the reused Asset to remain ACTIVE with matching single-file identity or complete package bundle authority. A stale target blocks commit and preserves Candidate authority.  
+**Regression guard:** missing/trashed/non-ACTIVE reused Asset, missing managed path, hash/length drift, package bundle drift, or incomplete discovery prevents DEDUP_REUSED retirement.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; concurrent REUSE mutation execution remains R8.  
+**Dependency findings checked:** X11, X14, X69, X73  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable stale-REUSE concurrency matrix remains R8 evidence.
+
+
 ---
 
 ## X73 — Cancelling one import can trash an asset currently reused by another import
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -3034,6 +3178,22 @@ Concurrent import matrix:
 ### Verification
 
 Cancelling one ImportUnit can never retire/trash an asset that another live import or active library relation still requires.
+
+
+### R2 implementation closure record — 2026-09-19
+
+**Implementation SHA:** 9c2e79edbfa7744dd02f7e1032dd2c1b01fc7bb4; 061a9de2e0795c38f7a3ccd3edec71adfd1110fa; 01c4e45e74536cf7a90ea45eaadd54a4819c08a5  
+**Primary remediation phase:** R2  
+**Changed paths:** `src/Neuterradise.Runtime/Import/ImportCancellationSettlement.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Reads/SchedulerReads.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportWrites.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs`  
+**Traceability checked:** cancelled unit → running shared-work safe boundary → global ImportItem/effective-asset consumers → durable shared interests → active Profile relations → exclusive rollback eligibility → Trash → DB delta cleanup → rollback settlement/interest release.  
+**Root-cause correction:** cancellation no longer infers exclusivity from same-unit rows. An ACTIVE Asset is rollback-trash eligible only when no other live ImportUnit/effective-asset interest and no external active Profile relation requires it. Shared running jobs are not signalled/cancelled while another live consumer exists.  
+**Regression guard:** A-create/B-reuse, multiple consumers, paused/restarted consumers, published relations, and shared running-job queries all use global durable consumer authority before destructive rollback.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; concurrent cancellation/Trash execution remains R4/R8 integration evidence.  
+**Dependency findings checked:** X06, X07, X08, X66, X69, X72  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R4 must revalidate scheduler/cancellation concurrency; R8 owns executable Trash/cancel evidence.
+
 
 ---
 
@@ -3270,6 +3430,8 @@ Reason: later fixes depend on stable appearance, deployment, model, path-job, pa
 Do not start broad runtime acceptance until these authorities are coherent.
 
 ## Phase R2 — Fix storage/import durability
+
+**Implementation status:** SOURCE-CLOSED at `01c4e45e74536cf7a90ea45eaadd54a4819c08a5`. Executable verification remains owned by R4 integration companions and R8; this source-closure statement does not claim runtime verification.
 
 Target:
 
