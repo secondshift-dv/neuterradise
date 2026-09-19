@@ -174,14 +174,12 @@ public sealed class ProfileManifestWriter
             {
                 var fullPath = Path.GetFullPath(profileFolderAbsolutePath);
                 var vaultProfiles = _paths.ProfilesPath;
-                if (!RootPathRules.IsWithinOrEqual(vaultProfiles, fullPath))
+                if (!fullPath.StartsWith(vaultProfiles, StringComparison.OrdinalIgnoreCase))
                 {
                     return new StorageOperationResult(
                         StorageOperationStatus.PathOutsideVault,
                         SafeErrorDetail: "Profile folder path is outside vault profiles directory.");
                 }
-
-                RootPathRules.RejectExistingReparsePoints(_paths.Root, fullPath);
             }
             catch (Exception ex) when (ex is ArgumentException or IOException)
             {

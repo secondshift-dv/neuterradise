@@ -88,17 +88,10 @@ public sealed class AutomaticImportAssignmentService
                 JOIN assets existing
                   ON existing.state = 'ACTIVE'
                  AND existing.asset_id <> candidate.asset_id
-                 AND (
-                     (candidate.media_type = 'MODEL'
-                      AND candidate.bundle_sha256 IS NOT NULL
-                      AND existing.bundle_sha256 = candidate.bundle_sha256)
-                     OR
-                     (candidate.media_type <> 'MODEL'
-                      AND existing.sha256 IS NOT NULL
-                      AND candidate.sha256 IS NOT NULL
-                      AND existing.sha256 = candidate.sha256
-                      AND existing.byte_length = candidate.byte_length)
-                 )
+                 AND existing.sha256 IS NOT NULL
+                 AND candidate.sha256 IS NOT NULL
+                 AND existing.sha256 = candidate.sha256
+                 AND existing.byte_length = candidate.byte_length
                 JOIN profile_assets pa
                   ON pa.asset_id = existing.asset_id
                  AND pa.relation_type = 'OWNER'

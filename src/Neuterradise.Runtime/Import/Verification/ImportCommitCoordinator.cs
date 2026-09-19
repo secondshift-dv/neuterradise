@@ -621,41 +621,10 @@ public sealed class ImportCommitCoordinator
         var profileToken = new ProfileStorageToken(state.DestinationProfileToken!);
         var displayLabel = state.DestinationDisplayLabel ?? "Profile";
 
-        var persistedProfileFolder = await ReadProfileManagedRelativePathAsync(profileId, cancellationToken)
-            .ConfigureAwait(false);
-        var plan = string.IsNullOrWhiteSpace(persistedProfileFolder)
-            ? _pathPlanner.AllocateProfilePlan(
-                profileId,
-                displayLabel,
-                profileToken,
-                candidate => ProfileFolderConflicts(candidate.ProfileFolderRelativePath, profileId))
-            : _pathPlanner.PlanProfile(profileId, displayLabel, profileToken);
-        var profileFolderRelativePath = string.IsNullOrWhiteSpace(persistedProfileFolder)
-            ? plan.ProfileFolderRelativePath
-            : persistedProfileFolder;
-        var absoluteFolder = _vaultPaths.ResolveVaultRelativePath(profileFolderRelativePath);
+        var plan = _pathPlanner.PlanProfile(profileId, displayLabel, profileToken);
+        var absoluteFolder = _vaultPaths.ResolveVaultRelativePath(plan.ProfileFolderRelativePath);
 
         Directory.CreateDirectory(absoluteFolder);
-        var existingManifestPath = Path.Combine(absoluteFolder, ProfileManifestWriter.ManifestFileName);
-        if (File.Exists(existingManifestPath))
-        {
-            try
-            {
-                var existingManifest = ProfileManifestWriter.Deserialize(
-                    await File.ReadAllTextAsync(existingManifestPath, cancellationToken).ConfigureAwait(false));
-                if (existingManifest.ProfileId != profileId)
-                {
-                    throw new CatalogInvariantException(
-                        $"Profile folder '{profileFolderRelativePath}' is already owned by another Profile.");
-                }
-            }
-            catch (System.Text.Json.JsonException exception)
-            {
-                throw new CatalogInvariantException(
-                    $"Profile folder '{profileFolderRelativePath}' contains an unreadable profile.json.",
-                    exception);
-            }
-        }
 
         var profileKind = destinationKind switch
         {
@@ -667,7 +636,7 @@ public sealed class ImportCommitCoordinator
             profileId,
             profileKind,
             displayLabel,
-            Path.GetFileName(profileFolderRelativePath),
+            Path.GetFileName(plan.ProfileFolderRelativePath),
             state.DestinationIdentityId,
             CoverAssetId: null,
             BannerAssetId: null,
@@ -679,7 +648,7 @@ public sealed class ImportCommitCoordinator
 
         // Persist the canonical folder path on the profile record so consumers
         // (Explorer, health, repair) can resolve it without recomputing.
-        await PersistProfileFolderPathAsync(profileId, profileFolderRelativePath, cancellationToken)
+        await PersistProfileFolderPathAsync(profileId, plan.ProfileFolderRelativePath, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -868,28 +837,13 @@ public sealed class ImportCommitCoordinator
         else if (mediaType == MediaType.Model && isMultiFile)
         {
             var primaryComp = components.FirstOrDefault(c => c.ComponentRole == ComponentRole.Primary) ?? components[0];
-            var profileFolder = await ReadProfileManagedRelativePathAsync(destinationProfileId, cancellationToken)
-                .ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(profileFolder))
-            {
-                throw new CatalogInvariantException(
-                    $"Destination Profile {destinationProfileId:D} has no authoritative managed folder.");
-            }
-
-            var pkgPlan = _pathPlanner.AllocateModelPackagePlan(
-                profileFolder,
+            var pkgPlan = _pathPlanner.PlanModelPackage(
+                destinationProfileId,
                 state.DestinationDisplayLabel ?? "Profile",
+                new ProfileStorageToken(state.DestinationProfileToken!),
                 assetId,
                 new AssetStorageToken(assetToken),
-                primaryComp.ComponentRelativePath,
-                candidate =>
-                    Directory.Exists(Path.Combine(
-                        _vaultPaths.Root,
-                        candidate.PackageDirectoryRelativePath.Replace('/', Path.DirectorySeparatorChar)))
-                    || occupiedTargets.Any(target =>
-                        target.StartsWith(
-                            candidate.PackageDirectoryRelativePath.TrimEnd('/') + "/",
-                            StringComparison.OrdinalIgnoreCase)));
+                primaryComp.ComponentRelativePath);
 
             relativeFolder = pkgPlan.PackageDirectoryRelativePath;
             plannedFileName = pkgPlan.PrimaryFileName;
@@ -999,51 +953,6 @@ public sealed class ImportCommitCoordinator
         await using var stream = File.OpenRead(path);
         var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
         return Convert.ToHexStringLower(hash);
-    }
-
-    private bool ProfileFolderConflicts(string profileFolderRelativePath, Guid expectedProfileId)
-    {
-        string absoluteFolder;
-        try
-        {
-            absoluteFolder = _vaultPaths.ResolveVaultRelativePath(profileFolderRelativePath);
-        }
-        catch (Exception exception) when (exception is ArgumentException or IOException)
-        {
-            return true;
-        }
-
-        if (!Directory.Exists(absoluteFolder))
-        {
-            return false;
-        }
-
-        var manifestPath = Path.Combine(absoluteFolder, ProfileManifestWriter.ManifestFileName);
-        if (!File.Exists(manifestPath))
-        {
-            return true;
-        }
-
-        try
-        {
-            return ProfileManifestWriter.Deserialize(File.ReadAllText(manifestPath)).ProfileId != expectedProfileId;
-        }
-        catch (Exception exception) when (exception is IOException
-            or UnauthorizedAccessException
-            or System.Text.Json.JsonException)
-        {
-            return true;
-        }
-    }
-
-    private async Task<string?> ReadProfileManagedRelativePathAsync(Guid profileId, CancellationToken ct)
-    {
-        await using var connection = await _catalog.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT current_managed_relative_path FROM profiles WHERE profile_id = $id;";
-        command.Parameters.AddWithValue("$id", DbGuid.Format(profileId));
-        return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
     }
 
     private async Task<string?> ReadPersistedPlacementTargetAsync(Guid assetId, CancellationToken ct)

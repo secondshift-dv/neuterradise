@@ -233,24 +233,13 @@ public sealed class VerificationValidator
                        EXISTS (
                            SELECT 1
                            FROM assets c
-                           JOIN assets a ON a.asset_id <> c.asset_id
+                           JOIN assets a ON a.sha256 = c.sha256
+                                        AND a.byte_length = c.byte_length
+                                        AND a.asset_id <> c.asset_id
                                         AND a.state = 'ACTIVE'
-                                        AND (
-                                            (c.media_type = 'MODEL'
-                                             AND c.bundle_sha256 IS NOT NULL
-                                             AND a.bundle_sha256 = c.bundle_sha256)
-                                            OR
-                                            (c.media_type <> 'MODEL'
-                                             AND a.sha256 = c.sha256
-                                             AND a.byte_length = c.byte_length)
-                                        )
                            WHERE c.asset_id = i.candidate_asset_id
                        ) AS has_active_duplicate,
-                       CASE
-                           WHEN c.media_type = 'MODEL'
-                               THEN COALESCE(c.dependency_status, 'DEPENDENCIES_UNKNOWN')
-                           ELSE COALESCE(c.dependency_status, 'SELF_CONTAINED')
-                       END AS dependency_status,
+                       c.dependency_status,
                        i.cleanup_policy
                 FROM import_items i
                 LEFT JOIN assets c ON c.asset_id = i.candidate_asset_id
@@ -267,7 +256,7 @@ public sealed class VerificationValidator
                 var decision = DbEnum.ParseDuplicateDecisionOrNull(
                     reader.IsDBNull(2) ? null : reader.GetString(2));
                 var hasActiveDuplicate = reader.GetInt64(3) != 0;
-                var depStatus = DbEnum.ParseAssetDependencyStatus(reader.GetString(4));
+                var depStatus = reader.IsDBNull(4) ? AssetDependencyStatus.SelfContained : DbEnum.ParseAssetDependencyStatus(reader.GetString(4));
                 var cleanupPolicy = reader.IsDBNull(5) ? ImportCleanupPolicy.Copy : DbEnum.ParseImportCleanupPolicy(reader.GetString(5));
 
                 if (disposition == ItemDisposition.Invalid)
@@ -286,7 +275,8 @@ public sealed class VerificationValidator
                 {
                     includedCount++;
 
-                    if (depStatus == AssetDependencyStatus.DependenciesMissing)
+                    if (depStatus == AssetDependencyStatus.DependenciesMissing
+                        && !(draft.AcknowledgedMissingDependencyItemIds?.Contains(itemId) ?? false))
                     {
                         blockers.Add(new VerificationBlocker(
                             itemId,

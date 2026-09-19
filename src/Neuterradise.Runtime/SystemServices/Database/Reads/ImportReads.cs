@@ -84,7 +84,7 @@ public sealed class ImportReads
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id) AS total_items,
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND disposition = 'INCLUDED') AS included_count,
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND disposition = 'SKIPPED') AS skipped_count,
-                   (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id AND ((ca.media_type = 'MODEL' AND ca.bundle_sha256 IS NOT NULL AND aa.bundle_sha256 = ca.bundle_sha256) OR (ca.media_type <> 'MODEL' AND aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length)) WHERE ca.asset_id = import_items.candidate_asset_id)) AS dup_count,
+                   (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length AND aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id WHERE ca.asset_id = import_items.candidate_asset_id)) AS dup_count,
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND disposition = 'INVALID') AS needs_attn_count,
                    u.created_at_ms, u.updated_at_ms
             FROM import_units u
@@ -151,7 +151,7 @@ public sealed class ImportReads
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id) AS total_items,
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND disposition = 'INCLUDED') AS included_count,
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND disposition = 'SKIPPED') AS skipped_count,
-                   (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id AND ((ca.media_type = 'MODEL' AND ca.bundle_sha256 IS NOT NULL AND aa.bundle_sha256 = ca.bundle_sha256) OR (ca.media_type <> 'MODEL' AND aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length)) WHERE ca.asset_id = import_items.candidate_asset_id)) AS dup_count,
+                   (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length AND aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id WHERE ca.asset_id = import_items.candidate_asset_id)) AS dup_count,
                    (SELECT COUNT(*) FROM import_items WHERE import_unit_id = u.import_unit_id AND disposition = 'INVALID') AS needs_attn_count,
                    u.created_at_ms, u.updated_at_ms, u.completed_at_ms, u.row_version
             FROM import_units u
@@ -515,7 +515,7 @@ public sealed class ImportReads
                    COUNT(i.import_item_id) AS total_count,
                    SUM(CASE WHEN i.disposition = 'INCLUDED' THEN 1 ELSE 0 END) AS included_count,
                    SUM(CASE WHEN i.disposition = 'SKIPPED' THEN 1 ELSE 0 END) AS skipped_count,
-                   SUM(CASE WHEN i.duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id AND ((ca.media_type = 'MODEL' AND ca.bundle_sha256 IS NOT NULL AND aa.bundle_sha256 = ca.bundle_sha256) OR (ca.media_type <> 'MODEL' AND aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length)) WHERE ca.asset_id = i.candidate_asset_id) THEN 1 ELSE 0 END) AS exact_dup_count,
+                   SUM(CASE WHEN i.duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length AND aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id WHERE ca.asset_id = i.candidate_asset_id) THEN 1 ELSE 0 END) AS exact_dup_count,
                    SUM(CASE WHEN i.disposition = 'INVALID' THEN 1 ELSE 0 END) AS needs_attention_count,
                    u.destination_profile_id,
                    u.library_commit_state,
@@ -686,7 +686,7 @@ public sealed class ImportReads
                    COUNT(i.import_item_id) AS total_count,
                    SUM(CASE WHEN i.disposition = 'INCLUDED' THEN 1 ELSE 0 END) AS included_count,
                    SUM(CASE WHEN i.disposition = 'SKIPPED' THEN 1 ELSE 0 END) AS skipped_count,
-                   SUM(CASE WHEN i.duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id AND ((ca.media_type = 'MODEL' AND ca.bundle_sha256 IS NOT NULL AND aa.bundle_sha256 = ca.bundle_sha256) OR (ca.media_type <> 'MODEL' AND aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length)) WHERE ca.asset_id = i.candidate_asset_id) THEN 1 ELSE 0 END) AS exact_dup_count,
+                   SUM(CASE WHEN i.duplicate_decision IS NULL AND EXISTS (SELECT 1 FROM assets ca JOIN assets aa ON aa.sha256 = ca.sha256 AND aa.byte_length = ca.byte_length AND aa.state = 'ACTIVE' AND aa.asset_id <> ca.asset_id WHERE ca.asset_id = i.candidate_asset_id) THEN 1 ELSE 0 END) AS exact_dup_count,
                    SUM(CASE WHEN i.disposition = 'INVALID' THEN 1 ELSE 0 END) AS needs_attention_count,
                    u.destination_profile_id,
                    u.library_commit_state,
@@ -760,17 +760,10 @@ public sealed class ImportReads
             SELECT i.import_item_id, a.asset_id, a.state, i.duplicate_decision
             FROM import_items i
             JOIN assets c ON c.asset_id = i.candidate_asset_id
-            JOIN assets a ON a.asset_id <> c.asset_id
+            JOIN assets a ON a.sha256 = c.sha256
+                         AND a.byte_length = c.byte_length
+                         AND a.asset_id <> c.asset_id
                          AND a.state IN ('ACTIVE','TRASHED')
-                         AND (
-                             (c.media_type = 'MODEL'
-                              AND c.bundle_sha256 IS NOT NULL
-                              AND a.bundle_sha256 = c.bundle_sha256)
-                             OR
-                             (c.media_type <> 'MODEL'
-                              AND a.sha256 = c.sha256
-                              AND a.byte_length = c.byte_length)
-                         )
             WHERE i.import_unit_id = $unitId
               AND c.sha256 IS NOT NULL
               AND c.byte_length IS NOT NULL
