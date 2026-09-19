@@ -67,6 +67,14 @@ public sealed class JobLeaseStore
             checkpointJson,
             cancellationToken);
 
+    internal Task<bool> InterruptForShutdownAsync(
+        JobLease lease,
+        CancellationToken cancellationToken) =>
+        _writes.TryInterruptForShutdownAsync(
+            lease.Record.JobId,
+            lease.Record.RowVersion,
+            cancellationToken);
+
     internal async Task<bool> CompleteAsync(
         JobLease lease,
         JobExecutionResult result,
@@ -140,6 +148,16 @@ public sealed class JobLease : IJobProgressReporter, IJobCheckpointStore
         }
 
         return _store.CompleteAsync(this, result, cancellationToken);
+    }
+
+    internal Task<bool> InterruptForShutdownAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.Exchange(ref _completed, 1) != 0)
+        {
+            throw new InvalidOperationException("A job lease can complete only once.");
+        }
+
+        return _store.InterruptForShutdownAsync(this, cancellationToken);
     }
 
     public Task ReportProgressAsync(long completed, long total, string? stage, CancellationToken cancellationToken = default)

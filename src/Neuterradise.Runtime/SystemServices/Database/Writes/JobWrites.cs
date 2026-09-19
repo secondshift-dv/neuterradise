@@ -322,6 +322,48 @@ public sealed class JobWrites
         return updated;
     }
 
+    public async Task<bool> TryInterruptForShutdownAsync(
+        Guid jobId,
+        long expectedRowVersion,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(jobId, nameof(jobId));
+        if (expectedRowVersion < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedRowVersion));
+        }
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection);
+        await using var update = transaction.CreateCommand(
+            """
+            UPDATE jobs
+            SET state = 'PENDING',
+                attempt = CASE WHEN attempt > 0 THEN attempt - 1 ELSE 0 END,
+                not_before_ms = NULL,
+                started_at_ms = NULL,
+                completed_at_ms = NULL,
+                error_code = NULL,
+                error_detail_safe = NULL,
+                row_version = row_version + 1
+            WHERE job_id = $jobId
+              AND row_version = $expectedRowVersion
+              AND state = 'RUNNING';
+            """);
+        update.Parameters.AddWithValue("$jobId", DbGuid.Format(jobId));
+        update.Parameters.AddWithValue("$expectedRowVersion", expectedRowVersion);
+        var changed = await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        if (changed)
+        {
+            JobSignals.Raise();
+        }
+
+        return changed;
+    }
+
     public async Task<bool> TryCompleteAsync(
         Guid jobId,
         long expectedRowVersion,

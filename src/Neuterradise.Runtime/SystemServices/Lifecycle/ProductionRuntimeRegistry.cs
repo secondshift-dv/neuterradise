@@ -262,6 +262,7 @@ public sealed class ProductionRuntimeRegistry : IAsyncDisposable
             var stage2Handler = new Stage2CompletionHandler(context.Catalog, stage2Coordinator);
             services.Scheduler.OnJobCompleted = stage2Handler.HandleCompletionAsync;
             services.Scheduler.OnReconciled = stage2Handler.ReconcileTerminalCapabilitiesAsync;
+            services.Cancellation.OnJobCancelled = stage2Handler.HandleCompletionAsync;
 
             return services;
         }

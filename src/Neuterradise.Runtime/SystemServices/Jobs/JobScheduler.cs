@@ -251,6 +251,10 @@ public sealed class JobScheduler : IAsyncDisposable
         bounded.CancelAfter(grace);
 
         JobSignals.Raised -= _onSignal;
+        foreach (var jobId in _runningLeases.Keys)
+        {
+            _cancellation.SetIntent(jobId, JobControlIntent.Shutdown);
+        }
         _shutdown.Cancel();
         Wake();
         try
@@ -665,21 +669,19 @@ public sealed class JobScheduler : IAsyncDisposable
             }
             catch (OperationCanceledException) when (cancelSignal.IsCancellationRequested)
             {
-                var intent = _cancellation.ConsumeIntent(jobId);
+                var intent = _cancellation.PeekIntent(jobId);
                 if (intent == JobControlIntent.None)
                 {
                     // Natural completion already settled the durable job.
                 }
                 else
                 {
-                    var result = intent switch
-                    {
-                        JobControlIntent.Pause => JobExecutionResult.Paused(
-                            "The handler stopped at a safe boundary because the import was paused."),
-                        _ => JobExecutionResult.Cancelled(
-                            "The handler stopped at a safe point after cancellation was requested."),
-                    };
-                    await CompleteAttemptAsync(lease, jobId, result).ConfigureAwait(false);
+                    await CompleteAttemptAsync(
+                        lease,
+                        jobId,
+                        JobExecutionResult.Cancelled(
+                            "The handler stopped at a safe boundary after its execution token was signalled."))
+                        .ConfigureAwait(false);
                 }
             }
             catch (Exception exception)
@@ -705,6 +707,33 @@ public sealed class JobScheduler : IAsyncDisposable
 
     private async Task CompleteAttemptAsync(JobLease lease, Guid jobId, JobExecutionResult result)
     {
+        var intent = _cancellation.PeekIntent(jobId);
+        if (!result.IsSucceeded && result.Classification == JobFailureClassification.Cancelled)
+        {
+            if (intent == JobControlIntent.Shutdown)
+            {
+                var interrupted = await lease.InterruptForShutdownAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!interrupted)
+                {
+                    Interlocked.Increment(ref _completionConflicts);
+                }
+
+                _cancellation.Finalize(jobId);
+                Wake();
+                return;
+            }
+
+            result = intent switch
+            {
+                JobControlIntent.Pause => JobExecutionResult.Paused(
+                    "The handler stopped at a safe boundary because the import was paused."),
+                JobControlIntent.Cancel => JobExecutionResult.Cancelled(
+                    "The handler stopped at a safe boundary because cancellation was requested."),
+                _ => result,
+            };
+        }
+
         var completed = await lease.CompleteAsync(result, CancellationToken.None).ConfigureAwait(false);
         if (!completed)
         {
@@ -738,6 +767,17 @@ public sealed class JobScheduler : IAsyncDisposable
             case JobRetryOutcome.Cancelled:
                 Interlocked.Increment(ref _cancelledCount);
                 _cancellation.Finalize(jobId);
+                try
+                {
+                    if (OnJobCompleted is { } cancelledObserver)
+                    {
+                        await cancelledObserver(jobId, result).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Projection remains recoverable through scheduler reconciliation.
+                }
                 break;
             case JobRetryOutcome.Paused:
                 _cancellation.Finalize(jobId);

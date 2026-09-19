@@ -41,6 +41,8 @@ public sealed class JobCancellationOperations
 
     public IReadOnlyCollection<Guid> PendingCancellations => _requested.Keys.ToArray();
 
+    public Func<Guid, JobExecutionResult, Task>? OnJobCancelled { get; set; }
+
     public bool IsCancellationRequested(Guid jobId) => _requested.ContainsKey(jobId);
 
     public async Task<bool> IsGlobalPausedAsync(CancellationToken cancellationToken = default)
@@ -141,6 +143,7 @@ public sealed class JobCancellationOperations
         if (cancelled == 1)
         {
             _requested.TryRemove(jobId, out _);
+            await NotifyCancelledAsync(jobId).ConfigureAwait(false);
             return JobCancellationOutcome.Cancelled;
         }
 
@@ -189,6 +192,11 @@ public sealed class JobCancellationOperations
             {
                 _requested.TryRemove(jobId, out _);
             }
+
+            if (record?.State == JobState.Cancelled)
+            {
+                await NotifyCancelledAsync(jobId).ConfigureAwait(false);
+            }
         }
 
         return cancelled;
@@ -219,6 +227,9 @@ public sealed class JobCancellationOperations
     /// <summary>
     /// Returns the control intent for a job and removes it. Returns None if no intent was set.
     /// </summary>
+    internal JobControlIntent PeekIntent(Guid jobId) =>
+        _intents.TryGetValue(jobId, out var intent) ? intent : JobControlIntent.None;
+
     internal JobControlIntent ConsumeIntent(Guid jobId)
     {
         _intents.TryRemove(jobId, out var intent);
@@ -237,6 +248,26 @@ public sealed class JobCancellationOperations
         if (_running.TryRemove(jobId, out var source))
         {
             source.Dispose();
+        }
+    }
+
+    private async Task NotifyCancelledAsync(Guid jobId)
+    {
+        var observer = OnJobCancelled;
+        if (observer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await observer(
+                jobId,
+                JobExecutionResult.Cancelled("The idle job was cancelled before execution.")).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Projection remains recoverable through scheduler reconciliation.
         }
     }
 
