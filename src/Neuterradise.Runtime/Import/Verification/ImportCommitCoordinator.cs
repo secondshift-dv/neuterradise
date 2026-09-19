@@ -298,18 +298,65 @@ public sealed class ImportCommitCoordinator
 
             foreach (var item in dedup)
             {
-                if (item.CandidateAssetId is Guid candidateId)
+                if (item.ReusedAssetId is not Guid reusedId || item.CandidateAssetId is not Guid candidateId)
                 {
-                    await _catalog.ImportWrites.RetireCandidateAsync(candidateId, AssetRetirementReason.DedupReused, cancellationToken).ConfigureAwait(false);
+                    return CommitBlockedResult(
+                        unitId,
+                        state,
+                        [new VerificationBlocker(
+                            item.ItemId,
+                            "REUSE_AUTHORITY_STALE",
+                            "The reviewed REUSE decision no longer names both Candidate and managed Asset authority.")]);
+                }
+
+                if (!state.ReusedAssetIds.Contains(reusedId))
+                {
+                    state.ReusedAssetIds.Add(reusedId);
+                }
+
+                var linked = await LinkReusedMediaAsync(
+                        destinationProfileId,
+                        unitId,
+                        reusedId,
+                        currentDraft.Destination.Kind,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!linked)
+                {
+                    return CommitBlockedResult(
+                        unitId,
+                        state,
+                        [new VerificationBlocker(
+                            item.ItemId,
+                            "REUSE_ASSOCIATION_FAILED",
+                            "The reused Asset could not be associated with the destination under current authority.")]);
+                }
+
+                var retired = await _catalog.ImportWrites.RetireCandidateForReuseAsync(
+                        candidateId,
+                        reusedId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!retired)
+                {
+                    return CommitBlockedResult(
+                        unitId,
+                        state,
+                        [new VerificationBlocker(
+                            item.ItemId,
+                            "REUSE_AUTHORITY_STALE",
+                            "The reused Asset changed after verification; the Candidate was preserved for a new duplicate decision.")]);
+                }
+
+                if (!state.RetiredCandidateIds.Contains(candidateId))
+                {
                     state.RetiredCandidateIds.Add(candidateId);
                 }
 
-                if (item.ReusedAssetId is Guid reusedId)
-                {
-                    state.ReusedAssetIds.Add(reusedId);
-                    await importWrites.AdvanceItemCleanupStateAsync(
-                        item.ItemId, SourceCleanupState.LibraryCommitted, cancellationToken).ConfigureAwait(false);
-                }
+                await importWrites.AdvanceItemCleanupStateAsync(
+                    item.ItemId,
+                    SourceCleanupState.LibraryCommitted,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             foreach (var item in skipped)
@@ -320,16 +367,6 @@ public sealed class ImportCommitCoordinator
                     cancellationToken).ConfigureAwait(false);
                 state.RetiredCandidateIds.Add(item.CandidateAssetId!.Value);
             }
-
-            // Exact duplicates were not copied again. An explicit/new destination receives a related
-            // association, but a generated Unknown must not steal or duplicate already-authoritative
-            // ownership in a mixed batch. Those reused assets keep their existing OWNER relation(s).
-            await LinkReusedMediaAsync(
-                destinationProfileId,
-                unitId,
-                state.ReusedAssetIds,
-                currentDraft.Destination.Kind,
-                cancellationToken).ConfigureAwait(false);
 
             // Stage 1 does not mutate published appearance. Do not create a rollback snapshot for
             // untouched Profile presentation: doing so could overwrite a legitimate Profile edit if
@@ -783,52 +820,46 @@ public sealed class ImportCommitCoordinator
         }
     }
 
-    private async Task LinkReusedMediaAsync(
+    private async Task<bool> LinkReusedMediaAsync(
         Guid destinationProfileId,
         Guid unitId,
-        IReadOnlyCollection<Guid> reusedAssetIds,
+        Guid assetId,
         DestinationKind? destinationKind,
         CancellationToken cancellationToken)
     {
-        if (reusedAssetIds.Count == 0)
+        try
         {
-            return;
+            if (await IsOwnedByAsync(destinationProfileId, assetId, cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            if (destinationKind == DestinationKind.SystemUnknown
+                && await HasActiveOwnerOutsideProfileAsync(
+                    destinationProfileId,
+                    assetId,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            var media = new MediaOperations(_catalog);
+            var result = await media.AddProfileAssetAssociationAsync(
+                new ProfileAssetAssociationRequest(
+                    destinationProfileId,
+                    assetId,
+                    ProfileAssetRelation.Manual,
+                    $"import:{unitId:D}"),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess;
         }
-
-        var media = new MediaOperations(_catalog);
-        foreach (var assetId in reusedAssetIds.Distinct())
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            try
-            {
-                if (await IsOwnedByAsync(destinationProfileId, assetId, cancellationToken).ConfigureAwait(false))
-                {
-                    continue;
-                }
-
-                // Decide-later/Unknown is the fallback only for media that genuinely has no owner
-                // authority. Exact duplicates already owned elsewhere keep that durable owner and are
-                // not polluted with a synthetic relationship to this import's generated Unknown.
-                if (destinationKind == DestinationKind.SystemUnknown
-                    && await HasActiveOwnerOutsideProfileAsync(
-                        destinationProfileId,
-                        assetId,
-                        cancellationToken).ConfigureAwait(false))
-                {
-                    continue;
-                }
-
-                var result = await media.AddProfileAssetAssociationAsync(
-                    new ProfileAssetAssociationRequest(destinationProfileId, assetId, ProfileAssetRelation.Manual, $"import:{unitId:D}"),
-                    cancellationToken).ConfigureAwait(false);
-                if (!result.IsSuccess)
-                {
-                    System.Diagnostics.Trace.TraceWarning("Reused media was not linked to the import profile: {0}", result.Error?.ErrorCode);
-                }
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                System.Diagnostics.Trace.TraceWarning("Reused media could not be linked: {0}", exception.GetType().Name);
-            }
+            throw;
+        }
+        catch
+        {
+            return false;
         }
     }
 

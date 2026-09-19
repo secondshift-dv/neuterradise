@@ -1,103 +1,198 @@
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
 
 namespace Neuterradise.App.SystemServices.Storage;
 
 /// <summary>
-/// Captures stable source filesystem identity where supported.
-/// Uses available BCL APIs (full path, last write time, attributes).
-/// Does not fabricate identity when unavailable — returns null instead.
-/// The identity is used at cleanup time to verify the source object
-/// being deleted is the same object whose identity was captured.
+/// Windows file-object identity used only for destructive import-source cleanup.
+/// A pathname, timestamp, hash, or length is not an object identity; destructive cleanup therefore
+/// requires the volume serial + file index obtained from the same open handle that is deleted.
 /// </summary>
 public static class SourceIdentityHelper
 {
-    /// <summary>
-    /// Captures source file identity as a JSON string.
-    /// Returns null if the file does not exist or identity cannot be determined.
-    /// </summary>
     public static string? CaptureIdentity(string filePath)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
         try
         {
-            if (!File.Exists(filePath))
-            {
-                return null;
-            }
+            var fullPath = Path.GetFullPath(filePath);
+            using var handle = File.OpenHandle(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
 
-            var info = new FileInfo(filePath);
-            info.Refresh();
-
-            if (!info.Exists)
-            {
-                return null;
-            }
-
-            var identity = new SourceFileIdentity(
-                info.FullName,
-                info.LastWriteTimeUtc.Ticks,
-                (long)info.Attributes,
-                info.Length);
-
-            return JsonSerializer.Serialize(identity, SourceFileIdentityContext.Default.SourceFileIdentity);
+            return TryReadIdentity(handle, fullPath, out var identity)
+                ? JsonSerializer.Serialize(identity, SourceFileIdentityContext.Default.SourceFileIdentity)
+                : null;
         }
         catch
         {
-            // Identity unavailable — caller should preserve source rather than delete.
             return null;
         }
     }
 
-    /// <summary>
-    /// Compares a previously captured identity against the current file state.
-    /// Returns true only when the file still represents the same logical object
-    /// (same path, same last write time, same attributes).
-    /// </summary>
     public static bool VerifyIdentity(string? capturedJson, string currentFilePath)
     {
-        if (capturedJson is null)
+        if (capturedJson is null || !OperatingSystem.IsWindows())
         {
             return false;
         }
 
         try
         {
-            var captured = JsonSerializer.Deserialize(capturedJson, SourceFileIdentityContext.Default.SourceFileIdentity);
-            if (captured is null)
-            {
-                return false;
-            }
-
-            if (!File.Exists(currentFilePath))
-            {
-                return false;
-            }
-
-            var info = new FileInfo(currentFilePath);
-            info.Refresh();
-
-            if (!info.Exists)
-            {
-                return false;
-            }
-
-            return string.Equals(captured.FullPath, info.FullName, StringComparison.OrdinalIgnoreCase)
-                && captured.LastWriteTicks == info.LastWriteTimeUtc.Ticks
-                && captured.Attributes == (long)info.Attributes
-                && captured.ByteLength == info.Length;
+            using var handle = File.OpenHandle(
+                currentFilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            return VerifyIdentity(capturedJson, handle, currentFilePath);
         }
         catch
         {
             return false;
         }
+    }
+
+    public static bool VerifyIdentity(
+        string? capturedJson,
+        SafeFileHandle handle,
+        string currentFilePath)
+    {
+        if (capturedJson is null || handle.IsInvalid || !OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        try
+        {
+            var captured = JsonSerializer.Deserialize(
+                capturedJson,
+                SourceFileIdentityContext.Default.SourceFileIdentity);
+            if (captured is null
+                || !TryReadIdentity(handle, Path.GetFullPath(currentFilePath), out var current))
+            {
+                return false;
+            }
+
+            return string.Equals(captured.FullPath, current.FullPath, StringComparison.OrdinalIgnoreCase)
+                && captured.VolumeSerialNumber == current.VolumeSerialNumber
+                && captured.FileIndex == current.FileIndex
+                && captured.ByteLength == current.ByteLength
+                && captured.LastWriteTimeUtcTicks == current.LastWriteTimeUtcTicks;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool TryDeleteOpenedFile(SafeFileHandle handle, out int win32Error)
+    {
+        win32Error = 0;
+        if (!OperatingSystem.IsWindows() || handle.IsInvalid)
+        {
+            return false;
+        }
+
+        var disposition = new FileDispositionInfo { DeleteFile = true };
+        if (SetFileInformationByHandle(
+                handle,
+                FileInfoByHandleClass.FileDispositionInfo,
+                ref disposition,
+                (uint)Marshal.SizeOf<FileDispositionInfo>()))
+        {
+            return true;
+        }
+
+        win32Error = Marshal.GetLastWin32Error();
+        return false;
+    }
+
+    private static bool TryReadIdentity(
+        SafeFileHandle handle,
+        string fullPath,
+        out SourceFileIdentity identity)
+    {
+        identity = default!;
+        if (!GetFileInformationByHandle(handle, out var info))
+        {
+            return false;
+        }
+
+        var fileIndex = ((ulong)info.FileIndexHigh << 32) | info.FileIndexLow;
+        var byteLength = ((long)info.FileSizeHigh << 32) | info.FileSizeLow;
+        var lastWrite = ((long)info.LastWriteTime.dwHighDateTime << 32)
+            | (uint)info.LastWriteTime.dwLowDateTime;
+
+        identity = new SourceFileIdentity(
+            fullPath,
+            info.VolumeSerialNumber,
+            fileIndex,
+            byteLength,
+            lastWrite);
+        return true;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle hFile,
+        out ByHandleFileInformation lpFileInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(
+        SafeFileHandle hFile,
+        FileInfoByHandleClass fileInformationClass,
+        ref FileDispositionInfo fileInformation,
+        uint bufferSize);
+
+    private enum FileInfoByHandleClass
+    {
+        FileBasicInfo = 0,
+        FileStandardInfo = 1,
+        FileNameInfo = 2,
+        FileRenameInfo = 3,
+        FileDispositionInfo = 4,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileDispositionInfo
+    {
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool DeleteFile;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public FILETIME CreationTime;
+        public FILETIME LastAccessTime;
+        public FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
     }
 }
 
 internal sealed record SourceFileIdentity(
     string FullPath,
-    long LastWriteTicks,
-    long Attributes,
-    long ByteLength);
+    uint VolumeSerialNumber,
+    ulong FileIndex,
+    long ByteLength,
+    long LastWriteTimeUtcTicks);
 
 [System.Text.Json.Serialization.JsonSerializable(typeof(SourceFileIdentity))]
 internal sealed partial class SourceFileIdentityContext : System.Text.Json.Serialization.JsonSerializerContext

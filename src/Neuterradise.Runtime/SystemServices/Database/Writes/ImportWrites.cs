@@ -675,6 +675,7 @@ public sealed class ImportWrites
                    managed.current_managed_relative_path, managed.current_managed_file_name,
                    i.cleanup_policy,
                    managed.dependency_status,
+                   managed.dependency_discovery_state,
                    i.source_identity_json
             FROM import_items i
             JOIN import_units u ON u.import_unit_id = i.import_unit_id
@@ -714,7 +715,8 @@ public sealed class ImportWrites
             reader.IsDBNull(18) ? null : reader.GetString(18),
             reader.IsDBNull(19) ? ImportCleanupPolicy.Copy : DbEnum.ParseImportCleanupPolicy(reader.GetString(19)),
             reader.IsDBNull(20) ? null : DbEnum.ParseAssetDependencyStatus(reader.GetString(20)),
-            reader.IsDBNull(21) ? null : reader.GetString(21));
+            reader.IsDBNull(21) ? null : DbEnum.ParseDependencyDiscoveryState(reader.GetString(21)),
+            reader.IsDBNull(22) ? null : reader.GetString(22));
     }
 
     public async Task MarkSourceCleanupConsumedAsync(
@@ -1276,6 +1278,160 @@ public sealed class ImportWrites
     /// Retires a candidate with the one canonical reason (Section 9.2). The reason vocabulary lives in
     /// <see cref="AssetRetirementReason"/>; this writer no longer keeps a private literal list.
     /// </summary>
+    public async Task<bool> RetireCandidateForReuseAsync(
+        Guid candidateAssetId,
+        Guid reusedAssetId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(candidateAssetId, nameof(candidateAssetId));
+        EnsureNonEmpty(reusedAssetId, nameof(reusedAssetId));
+        if (candidateAssetId == reusedAssetId)
+        {
+            return false;
+        }
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection);
+
+        await using var read = transaction.CreateCommand(
+            """
+            SELECT candidate.state, candidate.retirement_reason,
+                   candidate.sha256, candidate.byte_length, candidate.bundle_sha256,
+                   candidate.dependency_status, candidate.dependency_discovery_state,
+                   reused.state, reused.sha256, reused.byte_length, reused.bundle_sha256,
+                   reused.dependency_status, reused.dependency_discovery_state,
+                   reused.current_managed_relative_path, reused.current_managed_file_name
+            FROM assets candidate
+            JOIN assets reused ON reused.asset_id = $reusedId
+            WHERE candidate.asset_id = $candidateId;
+            """);
+        read.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+        read.Parameters.AddWithValue("$reusedId", DbGuid.Format(reusedAssetId));
+
+        string candidateState;
+        string? candidateReason;
+        string? candidateSha;
+        long? candidateLength;
+        string? candidateBundle;
+        string candidateDependency;
+        string candidateDiscovery;
+        string reusedState;
+        string? reusedSha;
+        long? reusedLength;
+        string? reusedBundle;
+        string reusedDependency;
+        string reusedDiscovery;
+        string? reusedPath;
+        string? reusedName;
+
+        await using (var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            candidateState = reader.GetString(0);
+            candidateReason = reader.IsDBNull(1) ? null : reader.GetString(1);
+            candidateSha = reader.IsDBNull(2) ? null : reader.GetString(2);
+            candidateLength = reader.IsDBNull(3) ? null : reader.GetInt64(3);
+            candidateBundle = reader.IsDBNull(4) ? null : reader.GetString(4);
+            candidateDependency = reader.GetString(5);
+            candidateDiscovery = reader.GetString(6);
+            reusedState = reader.GetString(7);
+            reusedSha = reader.IsDBNull(8) ? null : reader.GetString(8);
+            reusedLength = reader.IsDBNull(9) ? null : reader.GetInt64(9);
+            reusedBundle = reader.IsDBNull(10) ? null : reader.GetString(10);
+            reusedDependency = reader.GetString(11);
+            reusedDiscovery = reader.GetString(12);
+            reusedPath = reader.IsDBNull(13) ? null : reader.GetString(13);
+            reusedName = reader.IsDBNull(14) ? null : reader.GetString(14);
+        }
+
+        if (!string.Equals(reusedState, "ACTIVE", StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(reusedPath)
+            || string.IsNullOrWhiteSpace(reusedName))
+        {
+            return false;
+        }
+
+        var packageAuthority = candidateBundle is not null || reusedBundle is not null;
+        var identityMatches = packageAuthority
+            ? candidateBundle is not null
+              && reusedBundle is not null
+              && string.Equals(candidateBundle, reusedBundle, StringComparison.Ordinal)
+              && candidateDiscovery == "COMPLETE"
+              && reusedDiscovery == "COMPLETE"
+              && candidateDependency is "COMPLETE" or "SELF_CONTAINED"
+              && reusedDependency is "COMPLETE" or "SELF_CONTAINED"
+            : candidateSha is not null
+              && reusedSha is not null
+              && candidateLength.HasValue
+              && reusedLength.HasValue
+              && candidateLength.Value == reusedLength.Value
+              && string.Equals(candidateSha, reusedSha, StringComparison.Ordinal);
+
+        if (!identityMatches)
+        {
+            return false;
+        }
+
+        if (candidateState == "RETIRED")
+        {
+            var alreadyReused = string.Equals(candidateReason, "DEDUP_REUSED", StringComparison.Ordinal);
+            if (alreadyReused)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return alreadyReused;
+        }
+
+        if (candidateState != "CANDIDATE")
+        {
+            return false;
+        }
+
+        await using (var update = transaction.CreateCommand(
+            """
+            UPDATE assets
+            SET state = 'RETIRED',
+                retirement_reason = 'DEDUP_REUSED',
+                row_version = row_version + 1
+            WHERE asset_id = $candidateId
+              AND state = 'CANDIDATE';
+            """))
+        {
+            update.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+            if (await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                return false;
+            }
+        }
+
+        await using (var cancelJobs = transaction.CreateCommand(
+            """
+            UPDATE jobs
+            SET state = 'CANCELLED',
+                not_before_ms = NULL,
+                completed_at_ms = $now,
+                error_code = 'OWNER_RETIRED',
+                error_detail_safe = 'The transient duplicate Candidate was retired after REUSE revalidation.',
+                row_version = row_version + 1
+            WHERE owner_type = 'Asset'
+              AND owner_id = $candidateId
+              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE');
+            """))
+        {
+            cancelJobs.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+            cancelJobs.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
+            await cancelJobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public async Task RetireCandidateAsync(
         Guid candidateAssetId,
         AssetRetirementReason reason,
@@ -1449,4 +1605,5 @@ public sealed record PersistedSourceCleanupObligation(
     string? CurrentManagedFileName,
     ImportCleanupPolicy CleanupPolicy = ImportCleanupPolicy.Copy,
     AssetDependencyStatus? DependencyStatus = null,
+    DependencyDiscoveryState? DependencyDiscoveryState = null,
     string? SourceIdentityJson = null);

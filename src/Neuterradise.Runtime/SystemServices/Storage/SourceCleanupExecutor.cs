@@ -76,8 +76,10 @@ public sealed class SourceCleanupExecutor
             return new StorageOperationResult(StorageOperationStatus.Success);
         }
 
-        // In MOVE, missing/unknown dependency authority prohibits source deletion.
-        if (obligation.DependencyStatus is AssetDependencyStatus.DependenciesMissing or AssetDependencyStatus.DependenciesUnknown)
+        // MOVE is destructive. Package discovery must be positively complete; parser failure,
+        // unsupported discovery, missing dependencies, or unknown discovery all preserve source.
+        if (obligation.DependencyStatus is AssetDependencyStatus.DependenciesMissing or AssetDependencyStatus.DependenciesUnknown
+            || obligation.DependencyDiscoveryState is not (null or DependencyDiscoveryState.Complete))
         {
             await _importWrites.MarkSourceCleanupPreservedAsync(obligation, CancellationToken.None)
                 .ConfigureAwait(false);
@@ -163,32 +165,64 @@ public sealed class SourceCleanupExecutor
             };
         }
 
-        // cleanup-source component authority is always CandidateAssetId.
-        // ManagedAssetId/ReusedAssetId is the managed-destination authority only.
+        // X11: destructive source authority always comes from the current Candidate.
+        // The managed/reused Asset is verification authority only; its historical source metadata
+        // is never allowed to nominate an external path for deletion.
         var sourceAssetId = obligation.CandidateAssetId;
         var targetAssetId = obligation.ManagedAssetId;
-        IReadOnlyList<AssetComponentRecord> components = [];
-        if (targetAssetId is not null)
-        {
-            components = await _importWrites.ReadAssetComponentsAsync(targetAssetId.Value, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        var sourceComponents = sourceAssetId is null
+            ? Array.Empty<AssetComponentRecord>()
+            : await _importWrites.ReadAssetComponentsAsync(sourceAssetId.Value, cancellationToken).ConfigureAwait(false);
+        var targetComponents = targetAssetId is null
+            ? Array.Empty<AssetComponentRecord>()
+            : await _importWrites.ReadAssetComponentsAsync(targetAssetId.Value, cancellationToken).ConfigureAwait(false);
 
-        var isMultiFile = components.Count > 1
-            || (components.Count == 1 && components.Any(c => c.ComponentRole == ComponentRole.Dependency));
+        var isMultiFile = sourceComponents.Count > 1
+            || targetComponents.Count > 1
+            || sourceComponents.Any(c => c.ComponentRole == ComponentRole.Dependency)
+            || targetComponents.Any(c => c.ComponentRole == ComponentRole.Dependency);
 
         if (isMultiFile)
         {
+            if (sourceAssetId is null
+                || targetAssetId is null
+                || sourceComponents.Count == 0
+                || sourceComponents.Count != targetComponents.Count)
+            {
+                await _importWrites.MarkSourceCleanupPreservedAsync(obligation, CancellationToken.None)
+                    .ConfigureAwait(false);
+                return new StorageOperationResult(
+                    StorageOperationStatus.NeedsAttention,
+                    SafeErrorDetail: "Package component authority is incomplete; external source was preserved.");
+            }
+
+            var targetByNormalized = targetComponents.ToDictionary(
+                component => component.NormalizedComponentPath,
+                StringComparer.Ordinal);
+            foreach (var sourceComponent in sourceComponents)
+            {
+                if (!targetByNormalized.TryGetValue(sourceComponent.NormalizedComponentPath, out var targetComponent)
+                    || targetComponent.ByteLength != sourceComponent.ByteLength
+                    || !string.Equals(targetComponent.Sha256, sourceComponent.Sha256, StringComparison.Ordinal))
+                {
+                    await _importWrites.MarkSourceCleanupPreservedAsync(obligation, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return new StorageOperationResult(
+                        StorageOperationStatus.NeedsAttention,
+                        SafeErrorDetail: "Candidate and managed package component authorities do not reconcile.");
+                }
+            }
+
             var primarySourceDir = Path.GetDirectoryName(obligation.SourcePath) ?? string.Empty;
-            var componentSources = components.ToDictionary(
-                static component => component.ComponentRelativePath,
+            var componentSources = sourceComponents.ToDictionary(
+                component => component.NormalizedComponentPath,
                 component => !string.IsNullOrWhiteSpace(component.OriginalSourcePath)
                     ? component.OriginalSourcePath
-                    : Path.Combine(primarySourceDir, component.ComponentRelativePath.Replace("/", "\\")),
+                    : Path.Combine(
+                        primarySourceDir,
+                        component.ComponentRelativePath.Replace('/', Path.DirectorySeparatorChar)),
                 StringComparer.Ordinal);
 
-            // A package is one cleanup authority. If any persisted component source is Vault-owned,
-            // preserve the entire external-source obligation before deleting a sibling component.
             if (componentSources.Values.Any(IsWithinVault))
             {
                 await _importWrites.MarkSourceCleanupPreservedAsync(obligation, CancellationToken.None)
@@ -201,48 +235,48 @@ public sealed class SourceCleanupExecutor
 
             var hasChanged = false;
             var hasFailed = false;
-
-            foreach (var comp in components)
+            foreach (var sourceComponent in sourceComponents)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (comp.SourceCleanupState == SourceCleanupState.SourceConsumed)
+                if (sourceComponent.SourceCleanupState == SourceCleanupState.SourceConsumed)
                 {
                     continue;
                 }
 
-                var compSourcePath = componentSources[comp.ComponentRelativePath];
+                var targetComponent = targetByNormalized[sourceComponent.NormalizedComponentPath];
+                var compSourcePath = componentSources[sourceComponent.NormalizedComponentPath];
 
-                // Resolve managed counterpart for THIS component and verify it independently.
                 string compManagedPath;
                 try
                 {
-                    if (targetAssetId is not null)
-                    {
-                        var managedDir = Path.GetDirectoryName(managedPath) ?? string.Empty;
-                        var managedParent = Path.GetDirectoryName(managedDir) ?? managedDir;
-                        compManagedPath = Path.Combine(managedParent, comp.ComponentRelativePath.Replace("/", "\\"));
-                    }
-                    else
-                    {
-                        compManagedPath = managedPath;
-                    }
+                    compManagedPath = _paths.ResolveVaultRelativePath(
+                        CombineRelative(
+                            obligation.CurrentManagedRelativePath!,
+                            targetComponent.ComponentRelativePath));
                 }
-                catch (Exception)
+                catch (Exception exception) when (exception is ArgumentException or IOException)
                 {
-                    compManagedPath = managedPath;
+                    await _importWrites.UpdateComponentCleanupStateAsync(
+                        sourceAssetId.Value,
+                        sourceComponent.ComponentRelativePath,
+                        SourceCleanupState.SourceChanged,
+                        "Managed counterpart path is invalid.",
+                        cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    hasChanged = true;
+                    continue;
                 }
 
                 var compManagedVerification = await _verifier.VerifyAsync(
                     compManagedPath,
-                    comp.ByteLength,
-                    comp.Sha256,
+                    targetComponent.ByteLength,
+                    targetComponent.Sha256,
                     cancellationToken).ConfigureAwait(false);
                 if (!compManagedVerification.IsMatch)
                 {
                     await _importWrites.UpdateComponentCleanupStateAsync(
-                        sourceAssetId!.Value,
-                        comp.ComponentRelativePath,
+                        sourceAssetId.Value,
+                        sourceComponent.ComponentRelativePath,
                         SourceCleanupState.SourceChanged,
                         "Managed counterpart verification failed for this component.",
                         cancellationToken: CancellationToken.None).ConfigureAwait(false);
@@ -252,9 +286,9 @@ public sealed class SourceCleanupExecutor
 
                 var (outcome, errorDetail) = await SecureDeleteSourceFileAsync(
                     compSourcePath,
-                    comp.ByteLength,
-                    comp.Sha256,
-                    comp.SourceIdentityJson,
+                    sourceComponent.ByteLength,
+                    sourceComponent.Sha256,
+                    sourceComponent.SourceIdentityJson,
                     cancellationToken).ConfigureAwait(false);
 
                 switch (outcome)
@@ -262,15 +296,15 @@ public sealed class SourceCleanupExecutor
                     case DeleteOutcome.Consumed:
                     case DeleteOutcome.Missing:
                         await _importWrites.UpdateComponentCleanupStateAsync(
-                            sourceAssetId!.Value,
-                            comp.ComponentRelativePath,
+                            sourceAssetId.Value,
+                            sourceComponent.ComponentRelativePath,
                             SourceCleanupState.SourceConsumed,
                             cancellationToken: CancellationToken.None).ConfigureAwait(false);
                         break;
                     case DeleteOutcome.Changed:
                         await _importWrites.UpdateComponentCleanupStateAsync(
-                            sourceAssetId!.Value,
-                            comp.ComponentRelativePath,
+                            sourceAssetId.Value,
+                            sourceComponent.ComponentRelativePath,
                             SourceCleanupState.SourceChanged,
                             errorDetail,
                             cancellationToken: CancellationToken.None).ConfigureAwait(false);
@@ -278,8 +312,8 @@ public sealed class SourceCleanupExecutor
                         break;
                     default:
                         await _importWrites.UpdateComponentCleanupStateAsync(
-                            sourceAssetId!.Value,
-                            comp.ComponentRelativePath,
+                            sourceAssetId.Value,
+                            sourceComponent.ComponentRelativePath,
                             SourceCleanupState.SourceDeleteFailed,
                             errorDetail,
                             cancellationToken: CancellationToken.None).ConfigureAwait(false);
@@ -292,7 +326,7 @@ public sealed class SourceCleanupExecutor
             {
                 await _importWrites.MarkSourceCleanupChangedAsync(
                     obligation,
-                    "One or more package components changed on external source.",
+                    "One or more package components changed or lost managed verification.",
                     CancellationToken.None).ConfigureAwait(false);
                 return new StorageOperationResult(StorageOperationStatus.SourceChanged);
             }
@@ -308,10 +342,7 @@ public sealed class SourceCleanupExecutor
 
             await _importWrites.MarkSourceCleanupConsumedAsync(obligation, CancellationToken.None)
                 .ConfigureAwait(false);
-
-            return new StorageOperationResult(
-                StorageOperationStatus.Success,
-                managedVerification.Status);
+            return new StorageOperationResult(StorageOperationStatus.Success, managedVerification.Status);
         }
 
         var (singleOutcome, singleError) = await SecureDeleteSourceFileAsync(
@@ -393,6 +424,13 @@ public sealed class SourceCleanupExecutor
             return (DeleteOutcome.Missing, null);
         }
 
+        // X10: destructive MOVE requires stable object identity. No identity means preserve/fail
+        // closed; content equality alone never authorizes pathname deletion.
+        if (string.IsNullOrWhiteSpace(expectedIdentityJson))
+        {
+            return (DeleteOutcome.Changed, "Stable source file identity is unavailable.");
+        }
+
         FileStream? stream = null;
         try
         {
@@ -429,32 +467,25 @@ public sealed class SourceCleanupExecutor
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (expectedIdentityJson is not null && !SourceIdentityHelper.VerifyIdentity(expectedIdentityJson, filePath))
+            if (!SourceIdentityHelper.VerifyIdentity(
+                    expectedIdentityJson,
+                    stream.SafeFileHandle,
+                    filePath))
             {
-                return (DeleteOutcome.Changed, "Source file identity changed since preparation.");
+                return (DeleteOutcome.Changed, "Source file object identity changed since preparation.");
             }
 
-            try
+            if (!SourceIdentityHelper.TryDeleteOpenedFile(stream.SafeFileHandle, out var deleteError))
             {
-                File.Delete(filePath);
+                return (DeleteOutcome.Locked, $"Handle-bound source deletion failed with Win32 error {deleteError}.");
             }
-            catch (UnauthorizedAccessException)
-            {
-                return (DeleteOutcome.Denied, "Access denied deleting source file.");
-            }
-            catch (IOException)
-            {
-                return (DeleteOutcome.Locked, "Source file locked during delete.");
-            }
-            finally
-            {
-                await stream.DisposeAsync().ConfigureAwait(false);
-                stream = null;
-            }
+
+            await stream.DisposeAsync().ConfigureAwait(false);
+            stream = null;
 
             if (File.Exists(filePath))
             {
-                return (DeleteOutcome.Locked, "Source file was not removed after delete.");
+                return (DeleteOutcome.Locked, "The verified source object remains visible after handle-bound deletion.");
             }
 
             return (DeleteOutcome.Consumed, null);
