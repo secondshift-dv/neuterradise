@@ -1445,7 +1445,7 @@ public sealed class SettingsViewModel : ScreenStateViewModel, IDisposable
 
     public async Task CreateCategoryAsync(CancellationToken cancellationToken = default)
     {
-        using var mutationAdmission = _catalog!.MutationAdmission.Enter(nameof(CreateCategoryAsync));
+        using var mutationAdmission = _catalog?.MutationAdmission.Enter(nameof(CreateCategoryAsync));
         if (string.IsNullOrWhiteSpace(NewCategoryName) || _catalog is null)
         {
             return;
@@ -1472,7 +1472,7 @@ public sealed class SettingsViewModel : ScreenStateViewModel, IDisposable
 
     public async Task RenameCategoryAsync(CategoryItemViewModel item, string newName, CancellationToken cancellationToken = default)
     {
-        using var mutationAdmission = _catalog!.MutationAdmission.Enter(nameof(RenameCategoryAsync));
+        using var mutationAdmission = _catalog?.MutationAdmission.Enter(nameof(RenameCategoryAsync));
         ArgumentNullException.ThrowIfNull(item);
         if (string.IsNullOrWhiteSpace(newName) || _catalog is null)
         {
@@ -1501,7 +1501,7 @@ public sealed class SettingsViewModel : ScreenStateViewModel, IDisposable
 
     public async Task DeleteCategoryAsync(CategoryItemViewModel item, CancellationToken cancellationToken = default)
     {
-        using var mutationAdmission = _catalog!.MutationAdmission.Enter(nameof(DeleteCategoryAsync));
+        using var mutationAdmission = _catalog?.MutationAdmission.Enter(nameof(DeleteCategoryAsync));
         ArgumentNullException.ThrowIfNull(item);
         if (_catalog is null)
         {
@@ -1528,7 +1528,7 @@ public sealed class SettingsViewModel : ScreenStateViewModel, IDisposable
 
     public async Task CreateTagAsync(CancellationToken cancellationToken = default)
     {
-        using var mutationAdmission = _catalog!.MutationAdmission.Enter(nameof(CreateTagAsync));
+        using var mutationAdmission = _catalog?.MutationAdmission.Enter(nameof(CreateTagAsync));
         if (string.IsNullOrWhiteSpace(NewTagName) || _catalog is null)
         {
             return;
@@ -1578,7 +1578,7 @@ public sealed class SettingsViewModel : ScreenStateViewModel, IDisposable
 
     public async Task RenameTagAsync(TagItemViewModel item, string newName, CancellationToken cancellationToken = default)
     {
-        using var mutationAdmission = _catalog!.MutationAdmission.Enter(nameof(RenameTagAsync));
+        using var mutationAdmission = _catalog?.MutationAdmission.Enter(nameof(RenameTagAsync));
         ArgumentNullException.ThrowIfNull(item);
         if (string.IsNullOrWhiteSpace(newName) || _catalog is null)
         {
@@ -1628,7 +1628,7 @@ public sealed class SettingsViewModel : ScreenStateViewModel, IDisposable
 
     public async Task DeleteTagAsync(TagItemViewModel item, CancellationToken cancellationToken = default)
     {
-        using var mutationAdmission = _catalog!.MutationAdmission.Enter(nameof(DeleteTagAsync));
+        using var mutationAdmission = _catalog?.MutationAdmission.Enter(nameof(DeleteTagAsync));
         ArgumentNullException.ThrowIfNull(item);
         if (_catalog is null)
         {
