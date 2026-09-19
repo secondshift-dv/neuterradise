@@ -22,14 +22,15 @@ This document exists to stop audit drift.
 
 The Deep Audit is finished for the frozen source baseline. The next phase is not another broad audit. The next phase is implementation of the findings in this document, followed by exact regression and runtime verification.
 
-Every concrete finding below has four mandatory layers:
+Every concrete finding below has five mandatory layers:
 
 1. **Temuan** — the actual defect or evidence gap.
-2. **Root cause / failure path** — why the defect exists and how the failure propagates.
-3. **Penyelesaian** — the direct corrective design that must be implemented.
+2. **Root cause / failure path** — why the defect exists and how the failure propagates. For audit-control/evidence-only records, this layer is the exact provenance or evidence cause.
+3. **Penyelesaian** — the direct corrective design that must be implemented, or the evidence action required when source remediation is not yet authorized.
 4. **Penanggulangan** — the permanent regression guard, invariant, recovery rule, or verification gate that prevents the same class of defect from returning.
+5. **Source traceability** — the concrete repository path(s) and symbol/authority that an implementation agent must inspect. Section 4B is normative and satisfies this layer even when the finding body also repeats local paths.
 
-A finding is not source-closed merely because a local symptom was patched. Closure requires the root cause, sibling paths, recovery behavior, and regression guard to converge.
+A finding is not source-closed merely because a local symptom was patched. Closure requires the root cause, sibling paths, recovery behavior, traceability authority, and regression guard to converge.
 
 ---
 
@@ -42,6 +43,7 @@ The following status vocabulary is mandatory.
 - **SOURCE-CLOSED** may be assigned only after the corrective implementation and required regression guards are committed.
 - **VERIFIED** may be assigned only after the exact required verification succeeds on the intended source tree or package.
 - **RUNTIME-VERIFIED** may be assigned only after executable runtime behavior is proven, not inferred from source inspection.
+- **RESOLVED-NOT-REPRODUCED** may be assigned only to an EXECUTION-EVIDENCE-GAP after the exact required executable/artifact evidence disproves the suspected failure. It authorizes no source patch and must retain the evidence record.
 - **RESERVED** means a finding ID is permanently unavailable for reuse but does not represent a recoverable concrete finding.
 
 Do not translate CLOSED-DOC into fixed, passed, safe, production-ready, or runtime-verified.
@@ -194,6 +196,93 @@ Every X record was classified by tracing the current source producer → durable
 4. Any future challenge to an X item must be resolved by source/executable evidence and recorded as a status change; historical wording alone is not authority.
 5. A new X74+ is allowed only for a distinct root cause not already owned by this ledger.
 6. Static certification does not claim zero possible bugs. It claims that the ledger no longer treats unproven historical assertions as source defects and that every retained source finding has a concrete code-path basis.
+
+
+# 4B. Normative source traceability index
+
+This index is the canonical implementation locator for the ledger. It exists so a remediation agent does not have to rediscover where a finding lives or infer the intended authority from prose.
+
+Rules:
+
+1. Every concrete X record has an explicit trace target below.
+2. For **CONFIRMED-SOURCE/HARDENING**, the listed path/symbol set is the minimum read set before editing. Callers and sibling implementations must still be traced before mutation.
+3. For **EXECUTION-EVIDENCE-GAP**, the listed paths identify the artifact/runtime boundary to execute; they do not authorize speculative source changes.
+4. For **REJECTED**, the listed paths are falsification evidence only.
+5. A path listed here does not imply that every file requires modification.
+6. If implementation proves the real authority moved, update this index in the same commit that changes the finding's closure record.
+
+| ID | Canonical trace target |
+| --- | --- |
+| X01 | `src/Neuterradise.Runtime/Profiles/ProfileAppearanceRules.cs` — Cover eligibility; `src/Neuterradise.Runtime/SystemServices/Lifecycle/CriticalIntegrityGate.cs` — startup appearance integrity SQL. |
+| X02 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateHandoffService.cs` — validated handoff producer; `src/Neuterradise.Updater/ReplacementEngine.cs` — helper replacement consumer; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs` — durable recovery authority. |
+| X03 | `scripts/package-win-x64.ps1` — deployed model topology; `src/Neuterradise.Profiling.Worker/WorkerRuntimeEnvironment.cs` and `src/Neuterradise.Profiling.Protocol/ProfilingRuntimeEnvironment.cs` — runtime model-root contract. |
+| X04 | `src/Neuterradise.Runtime/Profiles/ProfileOperations.cs` — rename mutation/optional enqueue; `src/Neuterradise.Runtime/Profiles/ProfileDetailViewModel.cs` — production caller; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/ProfileRenameReconciliationJobHandler.cs` — reconciliation consumer. |
+| X05 | `src/Neuterradise.Runtime/Media/MediaOperations.cs` — OWNER mutation/optional relocation enqueue; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/OwnerRelocationJobHandler.cs` — relocation consumer. |
+| X06 | `src/Neuterradise.Runtime/Trash/TrashCoordinator.cs` — `CommitAssetTrashTransitionAsync`; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0001_initial.sql` — `trg_assets_nonactive_has_no_relations`; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs` — paired restore semantics. |
+| X07 | `src/Neuterradise.Runtime/Trash/TrashCoordinator.cs` — `CommitProfileTrashMarkerAsync`; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0001_initial.sql` — `trg_profiles_trash_has_no_active_relations`; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs` — paired restore. |
+| X08 | `src/Neuterradise.Runtime/Trash/TrashCoordinator.cs`, `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs`, and `src/Neuterradise.Runtime/SystemServices/Recovery/TrashRecovery.cs` — Profile Trash/Restore physical operation and restart recovery. |
+| X09 | `src/Neuterradise.Runtime/SystemServices/Storage/ManagedMoveExecutor.cs` — existing-target/`UnexpectedTarget` replay classification; import commit callers under `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs`. |
+| X10 | `src/Neuterradise.Runtime/SystemServices/Storage/SourceCleanupExecutor.cs` — destructive MOVE cleanup; `src/Neuterradise.Runtime/SystemServices/Storage/SourceIdentityHelper.cs` — stable source identity. |
+| X11 | `src/Neuterradise.Runtime/SystemServices/Storage/SourceCleanupExecutor.cs` — candidate vs reused-target component authority; `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs` — REUSE commit inputs. |
+| X12 | `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs` — `PrepareDestinationAsync` / `ProvisionProfileFolderAsync` and DestinationPrepared checkpoint ordering. |
+| X13 | `src/Neuterradise.Runtime/Maintenance/LibraryHealthEvaluator.cs` — asset health aggregation; component authority originates from database asset-component records. |
+| X14 | `src/Neuterradise.Runtime/Media/Model/ModelPackageContracts.cs` — `ModelPackageDiscovery.Discover`; `src/Neuterradise.Runtime/Import/Preparation/ImportPreparationCoordinator.cs` — discovery consumer/admission. |
+| X15 | REJECTED evidence: `src/Neuterradise.Runtime/Import/Preparation/ImportPreparationCoordinator.cs`, `src/Neuterradise.Runtime/Import/Preparation/ExactDuplicateDetector.cs`, `src/Neuterradise.Runtime/Import/Verification/VerificationValidator.cs`. |
+| X16 | REJECTED evidence: `src/Neuterradise.Runtime/Import/Verification/VerificationValidator.cs` — persisted acknowledged-missing-dependency consumption. |
+| X17 | `src/Neuterradise.Runtime/SystemServices/Storage/ManagedPathPlanner.cs` — `PlanAsset` / allocator authority; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs` and `src/Neuterradise.Runtime/Media/MediaOperations.cs` — direct-plan callers. |
+| X18 | REJECTED evidence: `src/Neuterradise.Runtime/SystemServices/Storage/RootPathRules.cs` plus inspected update/storage/recovery consumers; no reachable naive-prefix authority was proven. |
+| X19 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — interruption completion semantics; job handlers returning `JobExecutionResult.Cancelled`; `src/Neuterradise.Runtime/SystemServices/Jobs/JobCancellationOperations.cs` — control intent. |
+| X20 | `src/Neuterradise.Runtime/Import/ImportFinalizer.cs`, `src/Neuterradise.Runtime/Import/ImportCancellationSettlement.cs`, and `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs` — competing ImportUnit mutation actors. |
+| X21 | `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs` — unit lifecycle writes/CAS authority; callers in Import Finalizer/control/recovery. |
+| X22 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — bounded disposal and context disposal; `src/Neuterradise.Runtime/SystemServices/Recovery/VaultLock.cs` — lock lifetime. |
+| X23 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/SessionMarkerStore.cs` — `WriteUncleanAsync`; `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs` and `ShutdownCoordinator.cs` — lifecycle ordering. |
+| X24 | `src/Neuterradise.Runtime/Import/ImportUnitControlAuthority.cs` — Start/Prioritize; `src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs` — focus persistence; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs` — resume legality. |
+| X25 | `src/Neuterradise.Runtime/SystemServices/Database/Reads/CapabilityReads.cs` — required/terminal aggregation; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — readiness projection; `src/Neuterradise.Runtime/SystemServices/Database/Writes/CapabilityWrites.cs` — capability state. |
+| X26 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — scheduler shutdown cancellation; resumable handler completion semantics under `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/`. |
+| X30 | `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — serialized read loop, `HandleAnalyzeFacesAsync`, and `CancelRequest`. |
+| X31 | `src/Neuterradise.Profiling.Worker/FaceAnalysis/FaceAnalyzer.cs` — `ExpectedSha256` analysis path; `src/Neuterradise.Profiling.Worker/FaceAnalysis/OpenCvFaceImageSource.cs` — bytes decoded for inference. |
+| X32 | `src/Neuterradise.Runtime/Faces/IdentityBankProvider.cs` — cached embedding spaces/`InvalidateSpace`; `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs` — sample mutations. |
+| X33 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — persisted detector/embedding provenance; `src/Neuterradise.Runtime/Faces/EmbeddingSpaceKey.cs` and database Face writes define embedding authority. |
+| X34 | `src/Neuterradise.Runtime/SystemServices/Jobs/ProfilingWorkerProcessHost.cs` — `ConsecutiveFailures`, Ready handshake, restart breaker. |
+| X35 | `src/Neuterradise.Profiling.Protocol/ProfilingProtocol.cs` — frame maximum; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — `BuildIdentityIndexRequest` producer; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — consumer. |
+| X36 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — Build/Match/ReleaseIndex lifetime; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — ReleaseIndex consumer. |
+| X37 | `src/Neuterradise.Runtime/Trash/PurgeExecutor.cs` and `PurgePlan.cs` — purge dependency/preflight/delete authority; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0003_import_assignment_review.sql` — assignment-cluster FK schema. |
+| X38 | `src/Neuterradise.Runtime/Profiles/ProfileDetailViewModel.cs` — `LoadAsync`, queued `UiDispatch.Run`, final `ShowReady`. |
+| X39 | `src/Neuterradise.Runtime/Settings/SettingsViewModel.cs` — `InitializeAsync` and UI-bound property/collection mutation after background reads. |
+| X40 | `src/Neuterradise.Runtime/Settings/SettingsViewModel.cs` — `ApplyLanguageAsync`; `src/Neuterradise.Runtime/SystemServices/Storage/AppConfigurationStore.cs` — durable preference authority. |
+| X41 | `src/Neuterradise.Runtime/Settings/SettingsViewModel.cs` — `LatestValueAction<T>` preference pipelines; `src/Neuterradise.App/Ui/Foundation/ThemeRuntime.cs` — live resource mutation. |
+| X42 | `src/Neuterradise.Runtime/Profiles/ProfileDetailViewModel.cs` — queued route callbacks; `src/Neuterradise.Runtime/SystemServices/UiPrimitives.cs` — `UiDispatch` primitive. |
+| X43 | `.github/workflows/release.yml` — custom `NUGET_PACKAGES`; `scripts/package-win-x64.ps1` — package-root lookup/verification. |
+| X44 | `scripts/package-win-x64.ps1` — package construction/manifest members; `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageValidator.cs` — accepted required membership. |
+| X45 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs` — update trust decision/publisher-authenticity boundary. |
+| X46 | `.github/workflows/release.yml` — job permissions and action refs. |
+| X47 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`, `UpdateStartupRecovery.cs`, and `src/Neuterradise.Updater/ReplacementEngine.cs` — operation payload/backup/staging terminal cleanup ownership. |
+| X48 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStateStore.cs` — persisted-state parsing; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStartupRecovery.cs` — typed recovery consumer. |
+| X49 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateManifest.cs` — `MinimumCompatibleVersion`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs` — compatibility decision. |
+| X50 | `global.json`, `.github/workflows/release.yml`, and project dependency declarations — canonical SDK/dependency resolution authority. |
+| X51 | REJECTED evidence: `src/Neuterradise.Runtime/SystemServices/Recovery/JobRecovery.cs` — final-attempt reconcile/exhaustion path. |
+| X52 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `BootstrapContext.cs`, and `src/Neuterradise.App/App.xaml.cs` — partial-startup resource acquisition/`CleanupPartialStartupAsync`. |
+| X53 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `CriticalIntegrityGate.cs`, and `src/Neuterradise.Runtime/SystemServices/Recovery/StorageRecovery.cs` — recovery severity vs writable-startup safety. |
+| X54 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — optional `stopAcceptingCommands`; `src/Neuterradise.App/App.xaml.cs` — production shutdown wiring. |
+| X55 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — app budget; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateHandoffService.cs` and `src/Neuterradise.Updater/ReplacementEngine.cs` — updater handoff/parent wait. |
+| X56 | EVIDENCE boundary: `AGENTS.md`, `scripts/build.ps1`, `.github/workflows/release.yml`, and exact remediated source SHA. |
+| X57 | EVIDENCE boundary: `scripts/package-win-x64.ps1`, produced ZIP, extracted layout, and `src/Neuterradise.App/App.xaml.cs` startup path. |
+| X58 | EVIDENCE boundary: `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `AppConfigurationStore.cs`, `VaultPaths.cs`, and a disposable harness that does not yet exist on the frozen tree. |
+| X59 | EVIDENCE boundary: `scripts/package-win-x64.ps1`, `src/Neuterradise.Profiling.Worker/`, `src/Neuterradise.Profiling.Protocol/`, and packaged YuNet/SFace artifacts. |
+| X60 | EVIDENCE boundary: `src/Neuterradise.Updater/ReplacementEngine.cs`, `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`, `UpdateStartupRecovery.cs`, and a disposable InstallRoot. |
+| X61 | EVIDENCE boundary: finding-specific paths for X01–X60 plus the isolated regression harness required by Section 16; no such complete cross-domain harness exists on the frozen tree. |
+| X62 | AUDIT-CONTROL authority: this `DEEP_AUDIT_FINAL.md` ledger and recoverable historical provenance only; X27–X29 have no fabricated source mapping. |
+| X63 | AUDIT-CONTROL authority: this `DEEP_AUDIT_FINAL.md` immutable ID register and historical Stage 7 alias record. |
+| X64 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs` — extraction sink; `src/Neuterradise.Runtime/SystemServices/Storage/RootPathRules.cs` — containment/reparse authority; `.github/workflows/security.yml` — static-analysis gate. |
+| X65 | EVIDENCE boundary: `scripts/package-win-x64.ps1` exact canonical ZIP and `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs` exact staging consumer. |
+| X66 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — cancelled completion; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — terminal projection; `src/Neuterradise.Runtime/SystemServices/Lifecycle/ProductionRuntimeRegistry.cs` — reconciliation loop. |
+| X67 | `src/Neuterradise.Runtime/Media/MediaGridViewModel.cs` — `MediaActivationArbiter` and double-click timeout arbitration. |
+| X68 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ProductionRuntimeRegistry.cs` — `PublishStatusLoopAsync` / 750 ms `PeriodicTimer`. |
+| X69 | `src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs` — focused-import job scoping; `src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs`; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — shared reused-asset consumer semantics. |
+| X70 | `src/Neuterradise.Runtime/SystemServices/Win32Clipboard.cs` — synchronous `SetText` retry/`Thread.Sleep` path and UI callers. |
+| X71 | `scripts/package-win-x64.ps1` — pinned FFmpeg artifact identity, upstream URL, cache/source fallback. |
+| X72 | `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs` — REUSE final commit/retire/link ordering; `src/Neuterradise.Runtime/Import/Preparation/ExactDuplicateDetector.cs` — canonical duplicate identity. |
+| X73 | `src/Neuterradise.Runtime/Import/ImportCancellationSettlement.cs` — `ReadExclusiveActiveAssetIdsAsync`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs` and X69 authority — cross-import/shared consumer state. |
 
 
 # 5. Global invariants
@@ -975,6 +1064,8 @@ Any future path-containment finding must name the exact producer, consumer, unsa
 ### Verification
 
 X18 is absent from remediation queues and source-defect counts.
+
+# 9. Stage 5 — Jobs / Scheduler / Concurrency / Recovery Findings
 
 ## X19 — Pause intent can become durable CANCELLED
 
@@ -2287,6 +2378,10 @@ All finding-specific guards plus cross-domain matrix PASS on the fixed tree.
 
 History references a prior range reaching X29, but exact reliable records for X27–X29 cannot be recovered.
 
+### Root cause / audit-control cause
+
+Historical finding identity and provenance were not committed atomically into one immutable canonical register. Surviving references prove that the IDs existed, but not enough trustworthy evidence survives to reconstruct their titles, source paths, or remediation contracts without invention.
+
 ### Penyelesaian
 
 Reserve X27–X29 permanently. Do not fabricate contents and do not renumber later findings.
@@ -2308,6 +2403,10 @@ The canonical ledger must contain no X27/X28/X29 finding body, must mark all thr
 ### Temuan
 
 An old Stage 7 response reused X06–X09 for Profile/Trash findings, colliding with established Stage 3 and Stage 4 IDs.
+
+### Root cause / audit-control cause
+
+Finding IDs were previously allocated in conversational output without enforcing the canonical ledger as the sole allocator. That allowed a later stage to reuse identifiers already owned by earlier findings.
 
 ### Penyelesaian
 
@@ -2388,11 +2487,11 @@ The security query must no longer report the extraction sink, and all malicious 
 
 The historical register claimed that the ZIP produced by `Compress-Archive` contains explicit directory entries that `UpdatePackageStager` rejects because normalized names ending in `/` are refused.
 
-### Static-source result
+### Root cause / evidence gap
 
-The stager's rejection rule is visible in source, and the package script uses `Compress-Archive`. Static source alone, however, does not prove the exact entry set emitted by the PowerShell/.NET version used by the canonical Windows packaging environment.
+The stager's rejection rule is visible in source, and the package script uses `Compress-Archive`. Static source alone, however, does not prove the exact central-directory entry set emitted by the PowerShell/.NET version used by the canonical Windows packaging environment.
 
-Therefore X65 is **not certified as a source defect**.
+Therefore the current root cause is an **evidence boundary**, not a certified application defect: package producer behavior and staging consumer behavior have not yet been executed against the same exact artifact.
 
 ### Required evidence
 
@@ -2403,11 +2502,20 @@ During X57/X60 package-runtime verification:
 3. feed that exact ZIP to `UpdatePackageStager`;
 4. record whether directory entries are emitted and whether staging accepts them.
 
+### Resolution state machine
+
+X65 has exactly two legal evidence outcomes:
+
+1. **Reproduced:** append the artifact evidence and reclassify the same X65 from `EXECUTION-EVIDENCE-GAP` to `CONFIRMED-SOURCE / OPEN-IMPLEMENTATION`. Only after that reclassification is a source patch authorized.
+2. **Not reproduced:** append the artifact evidence and set X65 to `RESOLVED-NOT-REPRODUCED`. No source patch is authorized and the canonical ZIP remains a permanent regression input.
+
+Do not allocate a new finding ID merely because X65 transitions from evidence gap to confirmed source defect.
+
 ### Penyelesaian if reproduced
 
-If the canonical ZIP actually contains explicit directory entries and staging rejects it, update the stager to recognize safe contained directory entries while preserving traversal, duplicate, reparse, and membership protections.
+After and only after the **Reproduced** transition, update the stager to recognize safe contained directory entries while preserving traversal, duplicate, reparse, and membership protections.
 
-If the canonical ZIP contains no such entries or the stager accepts the artifact, close X65 as NOT-REPRODUCED.
+If the canonical ZIP contains no such entries or the stager accepts the artifact, no stager change is permitted for X65.
 
 ### Penanggulangan
 
@@ -2819,7 +2927,7 @@ Every baseline area below has an owning audit stage. A row without a unique find
 | Runtime/Faces | 8 | Stages 1, 6, 7, 8, 10, 11; X30–X36 |
 | Runtime/Gallery | 2 | Stages 1, 8, 10, 11; X38–X42 where applicable |
 | Runtime/Home | 1 | Stages 1, 8, 10, 11; no unique additional finding |
-| Runtime/Import | 38 | Stages 1, 4, 5, 10, 11, 12; X09–X26, X25, X69, X72–X73 |
+| Runtime/Import | 38 | Stages 1, 4, 5, 10, 11, 12; active X09–X14, X17, X19–X26, X69, X72–X73; rejected-evidence ownership X15–X16 and X18 |
 | Runtime/Localization | 4 | Stages 1, 8, 10, 11; X40 |
 | Runtime/Maintenance | 10 | Stages 1, 3, 4, 7, 10, 11; X13 and lifecycle integrity coverage |
 | Runtime/Media | 24 | Stages 1, 4, 8, 10, 11, 12; active findings X09–X14, X17, X42, X67, X70 |
@@ -2891,7 +2999,7 @@ Findings must not be fixed as unrelated tickets when they share one invariant.
 
 ## Cluster A — Appearance and profile authority
 
-X01, X07, X08, X37, X38, X42
+X01, X06–X08, X37, X38, X42
 
 Shared contract:
 
@@ -2902,7 +3010,7 @@ Shared contract:
 
 ## Cluster B — Managed path / physical authority
 
-X04, X05, X09–X14, X17
+X04, X05, X09–X14, X17, X72
 
 Shared contract:
 
@@ -2965,6 +3073,8 @@ signed/pinned authority → package completeness → compatibility → staged co
 # 22. Direct remediation order
 
 The following order minimizes rework and prevents fixing symptoms before their authority layer.
+
+**Primary-phase rule:** every CONFIRMED-SOURCE or CONFIRMED-HARDENING finding has exactly one primary remediation phase. A finding may be named again in a later phase only as an **integration/revalidation companion**; that later appearance does not authorize a second independent implementation, reset closure status, or require a new closure SHA. The original finding body and its closure record remain the sole status authority.
 
 ## Phase R0 — Freeze audit authority
 
@@ -3037,13 +3147,18 @@ Acceptance:
 
 ## Phase R4 — Fix scheduler and lifecycle concurrency
 
-Target:
+Primary target:
 
 - X19–X26;
 - X52–X55;
-- X66;
+- X66.
+
+Integration/revalidation companions already owned by R2:
+
 - X69;
 - X73.
+
+Do not reimplement X69/X73 in R4. Revalidate only their scheduler/cancellation integration after the R4 authority changes.
 
 Do not implement X51; it is rejected by Section 4A falsification.
 
@@ -3099,9 +3214,16 @@ Acceptance:
 
 ## Phase R7 — Complete release/update hardening
 
-Target:
+Primary target:
 
-- remaining X45–X48 plus integration with X02/X43–X50/X55/X64/X71. X65 remains an R8 execution-evidence task unless reproduced.
+- X45–X48.
+
+Integration/revalidation companions already owned by earlier phases:
+
+- X02, X43, X44, X49, X50, X64, X71 — primary R1;
+- X55 — primary R4.
+
+Do not reimplement those companion findings in R7. Revalidate the complete trust/update chain after X45–X48 land. X65 remains an R8 execution-evidence task unless reproduced and formally reclassified under its state machine.
 
 Acceptance:
 
@@ -3118,7 +3240,9 @@ Target:
 - X56–X61;
 - X65.
 
-This phase is mandatory after source remediation.
+This phase is mandatory for final audit acceptance after source remediation, but **this document does not override AGENTS.md's execution restriction**. Until the user/maintainer explicitly authorizes build/test/application execution, R8 remains **PENDING-EXECUTION-AUTHORIZATION** and agents must not launch the application or run tests merely because this section exists.
+
+Once explicit execution authorization is given, R8 is the canonical verification scope; agents must use the repository-owned commands/harnesses and the isolated/disposable roots defined here rather than inventing alternate verification paths.
 
 Order:
 
@@ -3142,18 +3266,19 @@ A build PASS does not close runtime findings.
 
 For each source finding:
 
-1. Read the finding and every finding in its dependency cluster.
-2. Trace all current callers before editing.
-3. Change the canonical authority rather than adding a second authority.
-4. Preserve existing safety constraints unless the finding explicitly proves they are contradictory.
-5. Add the regression guard in the same implementation unit.
-6. Verify failure/recovery paths, not only happy path.
-7. Record the commit/SHA that closes the finding.
-8. Do not mark SOURCE-CLOSED when only a symptom is patched.
-9. Do not delete recovery evidence merely to make a test pass.
-10. Do not disable triggers/FKs/integrity checks to make lifecycle operations succeed.
-11. Do not add alternate build/package/update paths.
-12. Do not touch the real Vault during build/package/release verification.
+1. Read the finding, its Section 4B trace target, and every finding in its dependency cluster.
+2. Confirm the listed source paths/symbols still exist on the implementation SHA, then trace all current callers before editing. If authority moved, update Section 4B in the same commit.
+3. Work only in the finding's primary remediation phase; later integration-phase references do not authorize duplicate implementation.
+4. Change the canonical authority rather than adding a second authority.
+5. Preserve existing safety constraints unless the finding explicitly proves they are contradictory.
+6. Add the regression guard in the same implementation unit.
+7. Verify failure/recovery paths, not only happy path.
+8. Record the commit/SHA that closes the finding.
+9. Do not mark SOURCE-CLOSED when only a symptom is patched.
+10. Do not delete recovery evidence merely to make a test pass.
+11. Do not disable triggers/FKs/integrity checks to make lifecycle operations succeed.
+12. Do not add alternate build/package/update paths.
+13. Do not touch the real Vault during build/package/release verification.
 
 Repository operating rules from AGENTS.md remain authoritative for canonical build/release commands and cache/Vault handling.
 
@@ -3164,10 +3289,12 @@ Repository operating rules from AGENTS.md remain authoritative for canonical bui
 When implementation begins, each finding entry should append a closure record using this exact structure:
 
 **Implementation SHA:** exact commit  
+**Primary remediation phase:** R1–R7 owner from Section 22  
 **Changed paths:** exhaustive intended paths  
+**Traceability checked:** Section 4B paths/symbols plus any newly discovered callers  
 **Root-cause correction:** what authority/state machine was changed  
 **Regression guard:** exact automated guard  
-**Verification result:** command/harness and result  
+**Verification result:** command/harness and result, or PENDING-EXECUTION-AUTHORIZATION when AGENTS.md prohibits execution absent explicit instruction  
 **Dependency findings checked:** IDs  
 **Source status:** SOURCE-CLOSED or still OPEN-IMPLEMENTATION  
 **Runtime status:** VERIFIED/RUNTIME-VERIFIED only when actually executed  
@@ -3181,7 +3308,7 @@ Never replace the original Temuan/Penyelesaian/Penanggulangan text with only the
 
 NeuTerradise may be described as remediated against this Deep Audit only when all of the following are true:
 
-1. Every CONFIRMED-SOURCE and CONFIRMED-HARDENING record is SOURCE-CLOSED (or evidence-backed superseded), every EXECUTION-EVIDENCE-GAP is resolved by the required execution evidence, and REJECTED records remain excluded from implementation.
+1. Every CONFIRMED-SOURCE and CONFIRMED-HARDENING record is SOURCE-CLOSED (or evidence-backed superseded), every EXECUTION-EVIDENCE-GAP is resolved by the required execution evidence, any disproved evidence hypothesis is explicitly RESOLVED-NOT-REPRODUCED, and REJECTED records remain excluded from implementation.
 2. X62–X63 remain CLOSED-DOC audit-control records.
 3. X27–X29 remain RESERVED.
 4. All DB trigger/FK invariants remain active.
@@ -3214,6 +3341,8 @@ The frozen baseline is therefore covered at two levels:
 
 1. **388/388 file ownership** across Stage 1–12; and
 2. **failure-mode ownership** across database invariants, filesystem crash boundaries, concurrency, shared assets, UI threading/lifetime, profiling IPC, updater trust/recovery, build reproducibility, and executable runtime evidence.
+
+The documentation itself has also been hardened against remediation drift: Section 4B supplies a complete X01–X73 traceability index; Stage 5 has an explicit canonical heading; X62/X63 now expose their audit-control causes; X65 has an explicit evidence-to-source state machine; every active finding has one primary remediation phase; integration-only repeats are labeled; and R8 execution authority is reconciled with AGENTS.md.
 
 The correct next action is implementation against this document, not another full audit of the same unchanged source tree.
 
