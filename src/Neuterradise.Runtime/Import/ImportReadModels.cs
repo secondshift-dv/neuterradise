@@ -297,6 +297,59 @@ public static class ImportLifecycle
     public static bool IsRetryable(this ImportUnitState state) =>
         state is ImportUnitState.FailedRetryable;
 
+    /// <summary>
+    /// Canonical monotonic lifecycle lattice. Terminal states are absorbing; recovery may retry
+    /// FailedRetryable work only into an explicitly forward preparation/verification state.
+    /// </summary>
+    public static bool CanTransitionTo(this ImportUnitState current, ImportUnitState next)
+    {
+        if (current == next)
+        {
+            return true;
+        }
+
+        if (current.IsTerminal())
+        {
+            return false;
+        }
+
+        return current switch
+        {
+            ImportUnitState.Intake =>
+                next is ImportUnitState.Preparing
+                    or ImportUnitState.FailedRetryable
+                    or ImportUnitState.FailedTerminal
+                    or ImportUnitState.Cancelled,
+            ImportUnitState.Preparing =>
+                next is ImportUnitState.ReadyForVerification
+                    or ImportUnitState.FailedRetryable
+                    or ImportUnitState.FailedTerminal
+                    or ImportUnitState.Cancelled,
+            ImportUnitState.ReadyForVerification =>
+                next is ImportUnitState.Committing
+                    or ImportUnitState.FailedRetryable
+                    or ImportUnitState.FailedTerminal
+                    or ImportUnitState.Cancelled,
+            ImportUnitState.Committing =>
+                next is ImportUnitState.Committed
+                    or ImportUnitState.Completed
+                    or ImportUnitState.CommittedWithCleanupAttention
+                    or ImportUnitState.FailedTerminal,
+            ImportUnitState.Committed =>
+                next is ImportUnitState.Completed
+                    or ImportUnitState.CommittedWithCleanupAttention,
+            ImportUnitState.CommittedWithCleanupAttention =>
+                next is ImportUnitState.Committed
+                    or ImportUnitState.Completed,
+            ImportUnitState.FailedRetryable =>
+                next is ImportUnitState.Preparing
+                    or ImportUnitState.ReadyForVerification
+                    or ImportUnitState.FailedTerminal
+                    or ImportUnitState.Cancelled,
+            _ => false,
+        };
+    }
+
     /// <summary>True when the source bytes of the item are still present on disk.</summary>
     public static bool SourceStillPresent(this SourceCleanupState state) =>
         state is not (SourceCleanupState.SourceConsumed);

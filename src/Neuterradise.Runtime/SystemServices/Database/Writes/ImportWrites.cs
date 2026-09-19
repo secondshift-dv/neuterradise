@@ -607,22 +607,70 @@ public sealed class ImportWrites
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public Task UpdateUnitStateAsync(
+        Guid unitId,
+        ImportUnitState state,
+        CancellationToken cancellationToken = default) =>
+        UpdateUnitStateAsync(unitId, state, expectedState: null, expectedRowVersion: null, cancellationToken);
+
     public async Task UpdateUnitStateAsync(
         Guid unitId,
         ImportUnitState state,
+        ImportUnitState? expectedState,
+        long? expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
         EnsureNonEmpty(unitId, nameof(unitId));
+        if (expectedRowVersion is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedRowVersion));
+        }
 
         await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = CatalogTransaction.Begin(connection, _writeCoordinator);
 
-        var now = DbTime.Format(_timeProvider.GetUtcNow());
-        var normalizedState = DbEnum.Format(state);
+        ImportUnitState currentState;
+        long currentRowVersion;
+        await using (var current = transaction.CreateCommand(
+            "SELECT state, row_version FROM import_units WHERE import_unit_id = $unitId;"))
+        {
+            current.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            await using var reader = await current.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
+            }
 
-        // completed_at_ms records when the unit stopped moving on its own, which is exactly the
-        // canonical terminal set (Section 44.2.6).
+            currentState = DbEnum.ParseImportUnitState(reader.GetString(0));
+            currentRowVersion = reader.GetInt64(1);
+        }
+
+        if (expectedState is { } requiredState && currentState != requiredState)
+        {
+            throw new CatalogConcurrencyConflictException(
+                $"ImportUnit {unitId:D} changed lifecycle state: expected {requiredState}, found {currentState}.");
+        }
+
+        if (expectedRowVersion is { } requiredVersion && currentRowVersion != requiredVersion)
+        {
+            throw new CatalogConcurrencyConflictException(
+                $"ImportUnit {unitId:D} changed concurrently: expected row_version {requiredVersion}, found {currentRowVersion}.");
+        }
+
+        if (!currentState.CanTransitionTo(state))
+        {
+            throw new CatalogConcurrencyConflictException(
+                $"Illegal ImportUnit lifecycle transition {currentState} -> {state} was rejected for {unitId:D}.");
+        }
+
+        if (currentState == state)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var now = DbTime.Format(_timeProvider.GetUtcNow());
         var isTerminal = state.IsTerminal();
         await using var command = transaction.CreateCommand(
             """
@@ -634,23 +682,25 @@ public sealed class ImportWrites
                 END,
                 updated_at_ms = $now,
                 row_version = row_version + 1
-            WHERE import_unit_id = $unitId;
+            WHERE import_unit_id = $unitId
+              AND state = $currentState
+              AND row_version = $currentRowVersion;
             """);
         command.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
-        command.Parameters.AddWithValue("$state", normalizedState);
+        command.Parameters.AddWithValue("$state", DbEnum.Format(state));
+        command.Parameters.AddWithValue("$currentState", DbEnum.Format(currentState));
+        command.Parameters.AddWithValue("$currentRowVersion", currentRowVersion);
         command.Parameters.AddWithValue("$isTerminal", isTerminal ? 1 : 0);
         command.Parameters.AddWithValue("$now", now);
 
-        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        if (affected == 0)
+        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
         {
-            throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
+            throw new CatalogConcurrencyConflictException(
+                $"ImportUnit {unitId:D} changed before lifecycle transition {currentState} -> {state} could commit.");
         }
 
         if (isTerminal)
         {
-            // X69: terminal units no longer own durable scheduling interest. Recompute shared
-            // Asset priority using only remaining live consumers, then remove this unit's rows.
             await using (var reprioritize = transaction.CreateCommand(
                 """
                 UPDATE jobs
@@ -680,9 +730,7 @@ public sealed class ImportWrites
                 """))
             {
                 reprioritize.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
-                reprioritize.Parameters.AddWithValue(
-                    "$backgroundPriority",
-                    JobPriorityPolicy.DefaultPriority);
+                reprioritize.Parameters.AddWithValue("$backgroundPriority", JobPriorityPolicy.DefaultPriority);
                 await reprioritize.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 

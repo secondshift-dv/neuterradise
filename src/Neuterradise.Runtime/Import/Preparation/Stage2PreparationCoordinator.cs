@@ -218,7 +218,12 @@ public sealed class Stage2PreparationCoordinator
         if (readiness.HasFailures)
         {
             await _importWrites
-                .UpdateUnitStateAsync(unitId, ImportUnitState.FailedTerminal, cancellationToken)
+                .UpdateUnitStateAsync(
+                    unitId,
+                    ImportUnitState.FailedTerminal,
+                    expectedState: unit.State,
+                    expectedRowVersion: null,
+                    cancellationToken)
                 .ConfigureAwait(false);
             return false;
         }
@@ -231,7 +236,12 @@ public sealed class Stage2PreparationCoordinator
         if (unit.State != ImportUnitState.ReadyForVerification)
         {
             await _importWrites
-                .UpdateUnitStateAsync(unitId, ImportUnitState.ReadyForVerification, cancellationToken)
+                .UpdateUnitStateAsync(
+                    unitId,
+                    ImportUnitState.ReadyForVerification,
+                    expectedState: unit.State,
+                    expectedRowVersion: null,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
