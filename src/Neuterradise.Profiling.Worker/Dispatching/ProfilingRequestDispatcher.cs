@@ -212,10 +212,44 @@ public sealed class ProfilingRequestDispatcher : IDisposable
             return;
         }
 
+        var analysisTask = Task.Run(
+            () => _faceAnalysis.Analyze(request, envelope.RequestId, cancellationToken),
+            CancellationToken.None);
+        var cancellationSignal = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellationRegistration = cancellationToken.Register(
+            static state => ((TaskCompletionSource<bool>)state!).TrySetResult(true),
+            cancellationSignal);
+
+        if (await Task.WhenAny(analysisTask, cancellationSignal.Task).ConfigureAwait(false)
+            != analysisTask)
+        {
+            await WriteErrorAsync(
+                    client,
+                    envelope,
+                    "CANCELLED",
+                    "AnalyzeFaces request was cancelled.",
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await analysisTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // The cancellation response is already terminal for this request. Observing the
+                // physical inference task here prevents an unobserved exception while the tracked
+                // request slot remains occupied until native work actually unwinds.
+            }
+
+            return;
+        }
+
         FaceAnalysisResult result;
         try
         {
-            result = _faceAnalysis.Analyze(request, envelope.RequestId, cancellationToken);
+            result = await analysisTask.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
