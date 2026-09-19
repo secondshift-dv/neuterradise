@@ -204,17 +204,26 @@ public sealed record BuildIdentityIndexRequest
         string embeddingSpaceKey,
         string modelId,
         string modelVersion,
+        string indexSignature,
+        int chunkIndex,
+        bool isFinalChunk,
         IReadOnlyList<IdentitySampleData> samples)
     {
         EmbeddingSpaceKey = embeddingSpaceKey;
         ModelId = modelId;
         ModelVersion = modelVersion;
+        IndexSignature = indexSignature;
+        ChunkIndex = chunkIndex;
+        IsFinalChunk = isFinalChunk;
         Samples = samples;
     }
 
     public string EmbeddingSpaceKey { get; init; } = string.Empty;
     public string ModelId { get; init; } = string.Empty;
     public string ModelVersion { get; init; } = string.Empty;
+    public string IndexSignature { get; init; } = string.Empty;
+    public int ChunkIndex { get; init; }
+    public bool IsFinalChunk { get; init; }
     public IReadOnlyList<IdentitySampleData> Samples { get; init; } = [];
 }
 
@@ -224,6 +233,7 @@ public sealed record BuildIdentityIndexResult
     public int IdentityCount { get; init; }
     public int SampleCount { get; init; }
     public int ExcludedSampleCount { get; init; }
+    public bool IsComplete { get; init; }
     public IReadOnlyList<string> Diagnostics { get; init; } = [];
 }
 

@@ -46,9 +46,14 @@ public sealed class FaceModelsUnavailableException : Exception
     public FaceModelsUnavailableException(string message) : base(message) { }
 }
 
-public sealed class FaceInputException : Exception
+public class FaceInputException : Exception
 {
     public FaceInputException(string message) : base(message) { }
+}
+
+public sealed class FaceContentMismatchException : FaceInputException
+{
+    public FaceContentMismatchException(string message) : base(message) { }
 }
 
 public static class FaceEmbeddingValidator
@@ -111,6 +116,10 @@ public sealed class FaceAnalyzer
         ArgumentNullException.ThrowIfNull(request);
 
         var diagnostics = new List<string>();
+        using var inputLease = VerifiedFaceInputLease.Open(
+            request.InputPath,
+            request.ExpectedSha256,
+            cancellationToken);
 
         IFaceDetectorAdapter? detector = null;
         IFaceEmbeddingAdapter? embedder = null;
@@ -127,20 +136,12 @@ public sealed class FaceAnalyzer
 
         using var scope = new AnalysisScope(_imageSource, detector, embedder);
 
-        try
+        if (request.IsVideo)
         {
-            if (request.IsVideo)
-            {
-                return AnalyzeVideo(request, requestId, detector, embedder, scope.ImageSource, diagnostics, cancellationToken);
-            }
+            return AnalyzeVideo(request, requestId, detector, embedder, scope.ImageSource, diagnostics, cancellationToken);
+        }
 
-            return AnalyzeImage(request, requestId, detector, embedder, scope.ImageSource, diagnostics, cancellationToken);
-        }
-        catch (FaceInputException ex)
-        {
-            diagnostics.Add(ex.Message);
-            return BuildResult(request, requestId, FaceAnalysisAvailability.Available, [], 0, diagnostics);
-        }
+        return AnalyzeImage(request, requestId, detector, embedder, scope.ImageSource, diagnostics, cancellationToken);
     }
 
     private static FaceAnalysisResult AnalyzeImage(
@@ -309,6 +310,94 @@ public sealed class FaceAnalyzer
             Diagnostics = diagnostics,
             SampledFrameCount = sampledFrameCount
         };
+
+    private sealed class VerifiedFaceInputLease : IDisposable
+    {
+        private const int HashBufferSize = 1024 * 1024;
+        private readonly FileStream _stream;
+
+        private VerifiedFaceInputLease(FileStream stream)
+        {
+            _stream = stream;
+        }
+
+        public static VerifiedFaceInputLease Open(
+            string path,
+            string expectedSha256,
+            CancellationToken cancellationToken)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            if (string.IsNullOrWhiteSpace(expectedSha256)
+                || expectedSha256.Length != 64
+                || expectedSha256.Any(static character => !Uri.IsHexDigit(character)))
+            {
+                throw new FaceInputException(
+                    "The expected SHA-256 fingerprint is missing or malformed.");
+            }
+
+            FileStream stream;
+            try
+            {
+                stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    HashBufferSize,
+                    FileOptions.SequentialScan);
+            }
+            catch (FileNotFoundException)
+            {
+                throw new FaceInputException("The analyzed media file no longer exists.");
+            }
+            catch (DirectoryNotFoundException)
+            {
+                throw new FaceInputException("The analyzed media file path no longer exists.");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new FaceInputException("The analyzed media file cannot be read.");
+            }
+            catch (IOException)
+            {
+                throw new FaceInputException("The analyzed media file could not be opened safely.");
+            }
+
+            try
+            {
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                var buffer = new byte[HashBufferSize];
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var read = stream.Read(buffer, 0, buffer.Length);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    hash.AppendData(buffer, 0, read);
+                }
+
+                var actualSha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+                if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new FaceContentMismatchException(
+                        "The analyzed media bytes do not match the authoritative Asset SHA-256.");
+                }
+
+                stream.Position = 0;
+                return new VerifiedFaceInputLease(stream);
+            }
+            catch
+            {
+                stream.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose() => _stream.Dispose();
+    }
 
     private sealed class AnalysisScope : IDisposable
     {

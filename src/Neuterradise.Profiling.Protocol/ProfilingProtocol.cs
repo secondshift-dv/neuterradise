@@ -6,7 +6,7 @@ namespace Neuterradise.Profiling.Protocol;
 
 public static class ProfilingProtocolVersion
 {
-    public const int Current = 2;
+    public const int Current = 3;
     public const uint MaximumFramePayloadSize = 4 * 1024 * 1024;
 }
 
@@ -83,6 +83,13 @@ public static class ProfilingProtocolSerializer
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) }
     };
+
+    public static int MeasurePayloadSize(ProfilingEnvelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        ValidateEnvelope(envelope);
+        return JsonSerializer.SerializeToUtf8Bytes(envelope, Options).Length;
+    }
 
     public static byte[] SerializeFrame(ProfilingEnvelope envelope)
     {

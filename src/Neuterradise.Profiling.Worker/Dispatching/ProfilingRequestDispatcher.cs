@@ -9,8 +9,12 @@ namespace Neuterradise.Profiling.Worker.Dispatching;
 
 public sealed class ProfilingRequestDispatcher : IDisposable
 {
+    private const int MaximumConcurrentLongRunningRequests = 2;
 
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _inFlightRequests = new();
+    private readonly ConcurrentDictionary<string, Task> _inFlightTasks = new();
+    private readonly SemaphoreSlim _requestSlots =
+        new(MaximumConcurrentLongRunningRequests, MaximumConcurrentLongRunningRequests);
     private readonly FaceAnalyzer _faceAnalysis;
     private readonly IdentityIndexCache _indexCache;
     private readonly IdentityMatcher _candidateMatcher;
@@ -31,25 +35,19 @@ public sealed class ProfilingRequestDispatcher : IDisposable
 
     public void ReleaseRuntimeResources()
     {
-        foreach (var inFlight in _inFlightRequests.Values)
-        {
-            try
-            {
-                inFlight.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-
-            }
-        }
-
-        _inFlightRequests.Clear();
+        CancelInFlightRequests();
         _indexCache.InvalidateAll();
     }
 
     public void Dispose()
     {
         ReleaseRuntimeResources();
+        if (_inFlightTasks.Count > 0)
+        {
+            Task.WhenAll(_inFlightTasks.Values.ToArray()).GetAwaiter().GetResult();
+        }
+
+        _requestSlots.Dispose();
         _indexCache.Dispose();
     }
 
@@ -63,7 +61,8 @@ public sealed class ProfilingRequestDispatcher : IDisposable
         }
         finally
         {
-            ReleaseRuntimeResources();
+            await CancelAndDrainInFlightRequestsAsync().ConfigureAwait(false);
+            _indexCache.InvalidateAll();
         }
     }
 
@@ -108,7 +107,7 @@ public sealed class ProfilingRequestDispatcher : IDisposable
 
             if (envelope.MessageType == ProfilingMessageType.Shutdown)
             {
-
+                await CancelAndDrainInFlightRequestsAsync().ConfigureAwait(false);
                 return 0;
             }
 
@@ -139,13 +138,23 @@ public sealed class ProfilingRequestDispatcher : IDisposable
 
             if (envelope.MessageType == ProfilingMessageType.AnalyzeFaces)
             {
-                await HandleAnalyzeFacesAsync(client, envelope, cancellationToken).ConfigureAwait(false);
+                await StartTrackedRequestAsync(
+                        client,
+                        envelope,
+                        cancellationToken,
+                        requestToken => HandleAnalyzeFacesAsync(client, envelope, requestToken))
+                    .ConfigureAwait(false);
                 continue;
             }
 
             if (envelope.MessageType == ProfilingMessageType.ExtractStills)
             {
-                await HandleExtractStillsAsync(client, envelope, cancellationToken).ConfigureAwait(false);
+                await StartTrackedRequestAsync(
+                        client,
+                        envelope,
+                        cancellationToken,
+                        requestToken => HandleExtractStillsAsync(client, envelope, requestToken))
+                    .ConfigureAwait(false);
                 continue;
             }
 
@@ -167,6 +176,11 @@ public sealed class ProfilingRequestDispatcher : IDisposable
                 if (release is not null)
                 {
                     _indexCache.Invalidate(release.EmbeddingSpaceKey);
+                    var released = ProfilingEnvelope.Create(
+                        ProfilingMessageType.ReleaseIndex,
+                        release,
+                        envelope.RequestId);
+                    await client.WriteEnvelopeAsync(released, cancellationToken).ConfigureAwait(false);
                 }
                 continue;
             }
@@ -201,25 +215,26 @@ public sealed class ProfilingRequestDispatcher : IDisposable
         FaceAnalysisResult result;
         try
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _inFlightRequests[envelope.RequestId] = cts;
-            try
-            {
-                result = _faceAnalysis.Analyze(request, envelope.RequestId, cts.Token);
-            }
-            finally
-            {
-                _inFlightRequests.TryRemove(envelope.RequestId, out _);
-            }
+            result = _faceAnalysis.Analyze(request, envelope.RequestId, cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            await WriteErrorAsync(client, envelope, "CANCELLED", "AnalyzeFaces request was cancelled.", cancellationToken).ConfigureAwait(false);
+            await WriteErrorAsync(client, envelope, "CANCELLED", "AnalyzeFaces request was cancelled.", CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+        catch (FaceContentMismatchException ex)
+        {
+            await WriteErrorAsync(client, envelope, "CONTENT_MISMATCH", ex.Message, CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+        catch (FaceInputException ex)
+        {
+            await WriteErrorAsync(client, envelope, "FACE_INPUT_INVALID", ex.Message, CancellationToken.None).ConfigureAwait(false);
             return;
         }
         catch (Exception ex)
         {
-            await WriteErrorAsync(client, envelope, "FACE_ANALYSIS_FAILED", $"Face analysis failed: {ex.Message}", cancellationToken).ConfigureAwait(false);
+            await WriteErrorAsync(client, envelope, "FACE_ANALYSIS_FAILED", $"Face analysis failed: {ex.Message}", CancellationToken.None).ConfigureAwait(false);
             return;
         }
 
@@ -249,25 +264,16 @@ public sealed class ProfilingRequestDispatcher : IDisposable
         ExtractStillsResult result;
         try
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _inFlightRequests[envelope.RequestId] = cts;
-            try
-            {
-                result = _stillFrames.Extract(request, cts.Token);
-            }
-            finally
-            {
-                _inFlightRequests.TryRemove(envelope.RequestId, out _);
-            }
+            result = _stillFrames.Extract(request, cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            await WriteErrorAsync(client, envelope, "CANCELLED", "ExtractStills request was cancelled.", cancellationToken).ConfigureAwait(false);
+            await WriteErrorAsync(client, envelope, "CANCELLED", "ExtractStills request was cancelled.", CancellationToken.None).ConfigureAwait(false);
             return;
         }
         catch (Exception ex)
         {
-            await WriteErrorAsync(client, envelope, "STILL_EXTRACTION_FAILED", $"Still extraction failed: {ex.Message}", cancellationToken).ConfigureAwait(false);
+            await WriteErrorAsync(client, envelope, "STILL_EXTRACTION_FAILED", $"Still extraction failed: {ex.Message}", CancellationToken.None).ConfigureAwait(false);
             return;
         }
 
@@ -294,23 +300,20 @@ public sealed class ProfilingRequestDispatcher : IDisposable
             return;
         }
 
-        var index = _indexCache.GetOrBuild(
-            request.EmbeddingSpaceKey,
-            request.ModelId,
-            request.ModelVersion,
-            request.Samples);
-
-        var result = new BuildIdentityIndexResult
+        try
         {
-            EmbeddingSpaceKey = index.EmbeddingSpaceKey,
-            IdentityCount = index.IdentityCount,
-            SampleCount = index.SampleCount,
-            ExcludedSampleCount = request.Samples.Count - index.SampleCount,
-            Diagnostics = index.Diagnostics
-        };
-
-        var response = ProfilingEnvelope.Create(ProfilingMessageType.BuildIdentityIndexResult, result, envelope.RequestId);
-        await client.WriteEnvelopeAsync(response, cancellationToken).ConfigureAwait(false);
+            var result = _indexCache.AppendChunk(request);
+            var response = ProfilingEnvelope.Create(
+                ProfilingMessageType.BuildIdentityIndexResult,
+                result,
+                envelope.RequestId);
+            await client.WriteEnvelopeAsync(response, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            _indexCache.Invalidate(request.EmbeddingSpaceKey);
+            await WriteErrorAsync(client, envelope, "IDENTITY_INDEX_BUILD_FAILED", ex.Message, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task HandleMatchIdentityCandidatesAsync(ProfilingClientTransport client, ProfilingEnvelope envelope, CancellationToken cancellationToken)
@@ -341,6 +344,105 @@ public sealed class ProfilingRequestDispatcher : IDisposable
         catch (IdentitySpaceMismatchException ex)
         {
             await WriteErrorAsync(client, envelope, "EMBEDDING_SPACE_MISMATCH", ex.Message, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task StartTrackedRequestAsync(
+        ProfilingClientTransport client,
+        ProfilingEnvelope envelope,
+        CancellationToken lifetimeToken,
+        Func<CancellationToken, Task> handler)
+    {
+        if (!_requestSlots.Wait(0))
+        {
+            await WriteErrorAsync(
+                    client,
+                    envelope,
+                    "WORKER_BUSY",
+                    "The Profiling Worker is at its bounded long-running request limit.",
+                    lifetimeToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        var requestCts = CancellationTokenSource.CreateLinkedTokenSource(lifetimeToken);
+        if (!_inFlightRequests.TryAdd(envelope.RequestId, requestCts))
+        {
+            requestCts.Dispose();
+            _requestSlots.Release();
+            await WriteErrorAsync(
+                    client,
+                    envelope,
+                    "DUPLICATE_REQUEST_ID",
+                    $"RequestId '{envelope.RequestId}' is already active.",
+                    lifetimeToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _inFlightTasks[envelope.RequestId] = completion.Task;
+
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await handler(requestCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (requestCts.IsCancellationRequested)
+                {
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        await WriteErrorAsync(
+                                client,
+                                envelope,
+                                "REQUEST_FAILED",
+                                $"Request failed: {ex.Message}",
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                    }
+                }
+                finally
+                {
+                    _inFlightRequests.TryRemove(envelope.RequestId, out _);
+                    requestCts.Dispose();
+                    _requestSlots.Release();
+                    completion.TrySetResult(true);
+                    _inFlightTasks.TryRemove(envelope.RequestId, out _);
+                }
+            },
+            CancellationToken.None);
+    }
+
+    private void CancelInFlightRequests()
+    {
+        foreach (var inFlight in _inFlightRequests.Values)
+        {
+            try
+            {
+                inFlight.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+    }
+
+    private async Task CancelAndDrainInFlightRequestsAsync()
+    {
+        CancelInFlightRequests();
+        var tasks = _inFlightTasks.Values.ToArray();
+        if (tasks.Length > 0)
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
     }
 
