@@ -59,8 +59,12 @@ public sealed class TrashRecovery
             {
                 TrashEntryState.Executing when entry.EntityType == TrashEntityType.Asset =>
                     await ResumeAssetTrashAsync(entry, cancellationToken).ConfigureAwait(false),
+                TrashEntryState.Executing when entry.EntityType == TrashEntityType.Profile =>
+                    await ResumeProfileTrashAsync(entry, cancellationToken).ConfigureAwait(false),
                 TrashEntryState.InTrash when entry.EntityType == TrashEntityType.Asset =>
                     await ResumeAssetRestoreAsync(entry, cancellationToken).ConfigureAwait(false),
+                TrashEntryState.InTrash when entry.EntityType == TrashEntityType.Profile =>
+                    await ResumeProfileRestoreAsync(entry, cancellationToken).ConfigureAwait(false),
                 PurgePlanState.Executing => await ResumePurgeAsync(entry, cancellationToken)
                     .ConfigureAwait(false),
                 PurgePlanState.RetryRequired => RetryablePurgeFinding(entry),
@@ -111,6 +115,39 @@ public sealed class TrashRecovery
                 : SafeDetail(result, "The authorized Trash move could not be completed safely."));
     }
 
+    private async Task<RecoveryFinding> ResumeProfileTrashAsync(
+        TrashEntryFacts entry,
+        CancellationToken cancellationToken)
+    {
+        var plan = ProfileTrashPlan.FromJson(entry.PlanJson);
+        if (plan is null)
+        {
+            return UnreadablePlanFinding(entry);
+        }
+
+        if (plan.OwnedActiveAssets.Count > 0 && plan.SelectedDispositions.Count == 0)
+        {
+            return entry.ToFinding(
+                plan.OperationId,
+                RecoveryOutcome.NeedsAttention,
+                "PROFILE_TRASH_DISPOSITION_MISSING",
+                "The interrupted Profile Trash predates durable disposition authority and needs attention.");
+        }
+
+        var result = await _trash.CommitProfileTrashAsync(
+                plan,
+                plan.SelectedDispositions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return entry.ToFinding(
+            plan.OperationId,
+            result.IsSuccess ? RecoveryOutcome.Completed : RecoveryOutcome.NeedsAttention,
+            result.IsSuccess ? "PROFILE_TRASH_RECOVERED" : "PROFILE_TRASH_NEEDS_ATTENTION",
+            result.IsSuccess
+                ? "The interrupted Profile Trash converged to its durable terminal marker."
+                : SafeDetail(result, "The interrupted Profile Trash could not be completed safely."));
+    }
+
     private async Task<RecoveryFinding?> ResumeAssetRestoreAsync(
         TrashEntryFacts entry,
         CancellationToken cancellationToken)
@@ -138,6 +175,31 @@ public sealed class TrashRecovery
             result.IsSuccess
                 ? "The interrupted Restore reached current active authority from its durable checkpoint."
                 : SafeDetail(result, "The interrupted Restore could not be completed safely."));
+    }
+
+    private async Task<RecoveryFinding?> ResumeProfileRestoreAsync(
+        TrashEntryFacts entry,
+        CancellationToken cancellationToken)
+    {
+        var plan = ProfileTrashPlan.FromJson(entry.PlanJson);
+        if (plan is null)
+        {
+            return UnreadablePlanFinding(entry);
+        }
+        if (plan.RestoreCheckpoint is null)
+        {
+            return null;
+        }
+
+        var result = await _restore.RestoreProfileAsync(entry.TrashEntryId, cancellationToken)
+            .ConfigureAwait(false);
+        return entry.ToFinding(
+            plan.OperationId,
+            result.IsSuccess ? RecoveryOutcome.Completed : RecoveryOutcome.NeedsAttention,
+            result.IsSuccess ? "PROFILE_RESTORE_RECOVERED" : "PROFILE_RESTORE_NEEDS_ATTENTION",
+            result.IsSuccess
+                ? "The interrupted Profile Restore converged from its durable checkpoint."
+                : SafeDetail(result, "The interrupted Profile Restore could not be completed safely."));
     }
 
     private async Task<RecoveryFinding> ResumePurgeAsync(

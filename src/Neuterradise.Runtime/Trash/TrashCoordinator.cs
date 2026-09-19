@@ -505,6 +505,9 @@ public sealed class TrashCoordinator
             validation = dispositionGate;
         }
 
+        plan = await EnsureProfileExecutionCheckpointAsync(plan, dispositions, cancellationToken)
+            .ConfigureAwait(false);
+
         var trashedAssets = dispositions.Count(
             disposition => disposition.Kind == ProfileOwnedAssetDispositionKind.TrashAsset);
         var reassignedAssets = dispositions.Count - trashedAssets;
@@ -556,6 +559,12 @@ public sealed class TrashCoordinator
             return profileRecovery.Failure!;
         }
 
+        plan = await PersistProfileManifestCheckpointAsync(
+                plan,
+                profileRecovery.RecoveryRelativePath!,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         return await CommitProfileTrashMarkerAsync(
                 plan,
                 profileRecovery.RecoveryRelativePath!,
@@ -563,6 +572,103 @@ public sealed class TrashCoordinator
                 reassignedAssets,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<ProfileTrashPlan> EnsureProfileExecutionCheckpointAsync(
+        ProfileTrashPlan plan,
+        IReadOnlyList<ProfileOwnedAssetDisposition> dispositions,
+        CancellationToken cancellationToken)
+    {
+        var ordered = dispositions.OrderBy(item => item.AssetId).ToArray();
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection, _writeCoordinator);
+
+        var entry = await ReadTrashEntryAsync(connection, transaction, plan.TrashEntryId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new CatalogInvariantException($"TrashEntry {plan.TrashEntryId:D} disappeared.");
+
+        var currentPlan = ProfileTrashPlan.FromJson(entry.PlanJson)
+            ?? throw new CatalogInvariantException($"Profile Trash plan {plan.TrashEntryId:D} became unreadable.");
+        if (entry.State == TrashEntryState.Executing)
+        {
+            if (currentPlan.SelectedDispositions.Count > 0
+                && !currentPlan.SelectedDispositions.SequenceEqual(ordered))
+            {
+                throw new CatalogConcurrencyConflictException(
+                    $"Profile Trash plan {plan.TrashEntryId:D} already has different durable dispositions.");
+            }
+
+            if (currentPlan.SelectedDispositions.Count > 0)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return currentPlan;
+            }
+        }
+        else if (entry.State != TrashEntryState.Pending)
+        {
+            throw new CatalogConcurrencyConflictException(
+                $"Profile Trash plan {plan.TrashEntryId:D} is not pending or executing.");
+        }
+
+        var checkpointed = currentPlan with { SelectedDispositions = ordered };
+        await CheckpointTrashEntryAsync(
+            transaction,
+            plan.TrashEntryId,
+            TrashEntryState.Executing,
+            entry.RecoveryRelativePath,
+            completedAtMs: null,
+            entry.RowVersion,
+            DbTime.Format(_timeProvider.GetUtcNow()),
+            cancellationToken,
+            checkpointed.ToJson()).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return checkpointed;
+    }
+
+    private async Task<ProfileTrashPlan> PersistProfileManifestCheckpointAsync(
+        ProfileTrashPlan plan,
+        string recoveryRelativePath,
+        CancellationToken cancellationToken)
+    {
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection, _writeCoordinator);
+
+        var entry = await ReadTrashEntryAsync(connection, transaction, plan.TrashEntryId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new CatalogInvariantException($"TrashEntry {plan.TrashEntryId:D} disappeared.");
+        var currentPlan = ProfileTrashPlan.FromJson(entry.PlanJson)
+            ?? throw new CatalogInvariantException($"Profile Trash plan {plan.TrashEntryId:D} became unreadable.");
+
+        if (entry.State != TrashEntryState.Executing)
+        {
+            throw new CatalogConcurrencyConflictException(
+                $"Profile Trash plan {plan.TrashEntryId:D} is not executing.");
+        }
+
+        if (currentPlan.TrashCheckpoint?.RecoveryRelativePath == recoveryRelativePath)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return currentPlan;
+        }
+
+        var checkpointed = currentPlan with
+        {
+            TrashCheckpoint = new ProfileTrashCheckpoint(recoveryRelativePath),
+        };
+        await CheckpointTrashEntryAsync(
+            transaction,
+            plan.TrashEntryId,
+            TrashEntryState.Executing,
+            recoveryRelativePath,
+            completedAtMs: null,
+            entry.RowVersion,
+            DbTime.Format(_timeProvider.GetUtcNow()),
+            cancellationToken,
+            checkpointed.ToJson()).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return checkpointed;
     }
 
     private static async Task<bool> IsCancellationRollbackAssetEligibleAsync(
@@ -684,15 +790,21 @@ public sealed class TrashCoordinator
 
         var now = DbTime.Format(_timeProvider.GetUtcNow());
 
-        await ExecuteAsync(
-            transaction,
-            "DELETE FROM profile_assets WHERE asset_id = $assetId AND relation_type = 'OWNER';",
-            cancellationToken,
-            ("$assetId", DbGuid.Format(plan.AssetId))).ConfigureAwait(false);
-
+        var relationSnapshots = await ReadAssetProfileRelationSnapshotsAsync(
+            connection, transaction, plan.AssetId, cancellationToken).ConfigureAwait(false);
         var affected = await ReadAffectedAppearanceReferencesAsync(
             connection, transaction, plan.AssetId, cancellationToken).ConfigureAwait(false);
-        var committedPlan = plan with { AffectedAppearanceReferences = affected };
+        var committedPlan = plan with
+        {
+            RelationSnapshots = relationSnapshots,
+            AffectedAppearanceReferences = affected,
+        };
+
+        await ExecuteAsync(
+            transaction,
+            "DELETE FROM profile_assets WHERE asset_id = $assetId;",
+            cancellationToken,
+            ("$assetId", DbGuid.Format(plan.AssetId))).ConfigureAwait(false);
         foreach (var reference in affected)
         {
             await ExecuteAsync(
@@ -763,9 +875,14 @@ public sealed class TrashCoordinator
             [plan.AssetId],
             CatalogInvalidationDomain.Media,
             plan.ExpectedAssetRowVersion + 1));
+        var affectedRelationProfileIds = relationSnapshots
+            .Select(relation => relation.ProfileId)
+            .Append(plan.OwnerProfileId)
+            .Distinct()
+            .ToArray();
         transaction.QueueInvalidation(new CatalogInvalidation(
             Guid.Empty,
-            [plan.OwnerProfileId],
+            affectedRelationProfileIds,
             CatalogInvalidationDomain.Profile,
             0));
         transaction.QueueInvalidation(new CatalogInvalidation(
@@ -827,7 +944,38 @@ public sealed class TrashCoordinator
                 $"{remaining.Count} media item(s) this Profile owns still need a destination before it can move to Trash.");
         }
 
+        var relationSnapshots = await ReadProfileRelationSnapshotsAsync(
+            connection, transaction, plan.ProfileId, cancellationToken).ConfigureAwait(false);
+        var identitySnapshot = await ReadActiveIdentitySnapshotAsync(
+            connection, transaction, plan.ProfileId, cancellationToken).ConfigureAwait(false);
+        var committedPlan = plan with
+        {
+            RelationSnapshots = relationSnapshots,
+            ActiveIdentitySnapshot = identitySnapshot,
+            TrashCheckpoint = new ProfileTrashCheckpoint(recoveryRelativePath),
+        };
+
         var now = DbTime.Format(_timeProvider.GetUtcNow());
+
+        await ExecuteAsync(
+            transaction,
+            "DELETE FROM profile_assets WHERE profile_id = $profileId;",
+            cancellationToken,
+            ("$profileId", DbGuid.Format(plan.ProfileId))).ConfigureAwait(false);
+
+        await ExecuteAsync(
+            transaction,
+            """
+            UPDATE identities
+            SET is_active = 0,
+                retired_at_ms = COALESCE(retired_at_ms, $now),
+                row_version = row_version + 1
+            WHERE profile_id = $profileId AND is_active = 1;
+            """,
+            cancellationToken,
+            ("$now", now),
+            ("$profileId", DbGuid.Format(plan.ProfileId))).ConfigureAwait(false);
+
         var newProfileRowVersion = profile.RowVersion + 1;
         var updated = await ExecuteAsync(
             transaction,
@@ -857,7 +1005,8 @@ public sealed class TrashCoordinator
             completedAtMs: null,
             entry.RowVersion,
             now,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            committedPlan.ToJson()).ConfigureAwait(false);
 
         await AppendActivityAsync(
             transaction,
@@ -1333,6 +1482,96 @@ public sealed class TrashCoordinator
         }
 
         return owned;
+    }
+
+    internal static async Task<IReadOnlyList<AssetProfileRelationSnapshot>> ReadAssetProfileRelationSnapshotsAsync(
+        SqliteConnection connection,
+        CatalogTransaction? transaction,
+        Guid assetId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(
+            connection,
+            transaction,
+            """
+            SELECT profile_id, relation_type, provenance_key, publication_import_unit_id, created_at_ms
+            FROM profile_assets
+            WHERE asset_id = $assetId
+            ORDER BY profile_id, relation_type;
+            """);
+        command.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+
+        var result = new List<AssetProfileRelationSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            result.Add(new AssetProfileRelationSnapshot(
+                DbGuid.Parse(reader.GetString(0)),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : DbGuid.Parse(reader.GetString(3)),
+                reader.GetInt64(4)));
+        }
+        return result;
+    }
+
+    internal static async Task<IReadOnlyList<ProfileRelationSnapshot>> ReadProfileRelationSnapshotsAsync(
+        SqliteConnection connection,
+        CatalogTransaction? transaction,
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(
+            connection,
+            transaction,
+            """
+            SELECT asset_id, relation_type, provenance_key, publication_import_unit_id, created_at_ms
+            FROM profile_assets
+            WHERE profile_id = $profileId
+            ORDER BY asset_id, relation_type;
+            """);
+        command.Parameters.AddWithValue("$profileId", DbGuid.Format(profileId));
+
+        var result = new List<ProfileRelationSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            result.Add(new ProfileRelationSnapshot(
+                DbGuid.Parse(reader.GetString(0)),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : DbGuid.Parse(reader.GetString(3)),
+                reader.GetInt64(4)));
+        }
+        return result;
+    }
+
+    internal static async Task<ProfileIdentitySnapshot?> ReadActiveIdentitySnapshotAsync(
+        SqliteConnection connection,
+        CatalogTransaction? transaction,
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(
+            connection,
+            transaction,
+            """
+            SELECT identity_id, row_version, retired_at_ms
+            FROM identities
+            WHERE profile_id = $profileId AND is_active = 1
+            LIMIT 1;
+            """);
+        command.Parameters.AddWithValue("$profileId", DbGuid.Format(profileId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new ProfileIdentitySnapshot(
+            DbGuid.Parse(reader.GetString(0)),
+            reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetInt64(2));
     }
 
     internal static async Task<IReadOnlyList<AffectedAppearanceReference>> ReadAffectedAppearanceReferencesAsync(

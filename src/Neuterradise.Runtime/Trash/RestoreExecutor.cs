@@ -256,7 +256,7 @@ public sealed class RestoreExecutor
         EnsureNonEmpty(trashEntryId, nameof(trashEntryId));
 
         TrashEntryRow entry;
-        ProfileTrashPlan? plan;
+        ProfileTrashPlan plan;
         ProfileTrashState profile;
         await using (var readConnection = await _connectionFactory.OpenConnectionAsync(cancellationToken)
                          .ConfigureAwait(false))
@@ -272,7 +272,8 @@ public sealed class RestoreExecutor
             }
 
             entry = currentEntry;
-            plan = ProfileTrashPlan.FromJson(entry.PlanJson);
+            plan = ProfileTrashPlan.FromJson(entry.PlanJson)
+                ?? throw new CatalogInvariantException($"Profile Trash plan {trashEntryId:D} is unreadable.");
             var currentProfile = await TrashCoordinator.ReadProfileTrashStateAsync(
                     readConnection, transaction: null, entry.EntityId, cancellationToken)
                 .ConfigureAwait(false);
@@ -290,9 +291,9 @@ public sealed class RestoreExecutor
         {
             var prior = OperationResult<ProfileRestoreOutcome>.Success(
                 new ProfileRestoreOutcome(trashEntryId, profile.ProfileId, profile.RowVersion),
-                plan?.OperationId);
+                plan.OperationId);
             return await RefreshManifestAfterRestoreAsync(
-                    profile.ProfileId, prior, plan?.OperationId, cancellationToken)
+                    profile.ProfileId, prior, plan.OperationId, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -318,11 +319,28 @@ public sealed class RestoreExecutor
         }
 
         var recoveryRelativePath = entry.RecoveryRelativePath ?? $"_trash/profiles/{profile.ProfileId:D}";
+        if (plan.RestoreCheckpoint is null)
+        {
+            var checkpointed = await PersistProfileRestoreCheckpointAsync(
+                    entry,
+                    plan,
+                    recoveryRelativePath,
+                    profile.CurrentManagedRelativePath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!checkpointed.IsSuccess || checkpointed.Value is null)
+            {
+                return Propagate<ProfileTrashPlan, ProfileRestoreOutcome>(checkpointed);
+            }
+            plan = checkpointed.Value;
+        }
+
+        var restoreCheckpoint = plan.RestoreCheckpoint!;
         var move = await _moveExecutor.ExecuteProfileManifestRestoreMoveAsync(
                 new ManagedProfileManifestRestoreRequest(
                     profile.ProfileId,
-                    recoveryRelativePath,
-                    profile.CurrentManagedRelativePath),
+                    restoreCheckpoint.RecoveryRelativePath,
+                    restoreCheckpoint.TargetManagedRelativePath),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!move.IsSuccess && move.Status != StorageOperationStatus.SourceMissing)
@@ -377,11 +395,70 @@ public sealed class RestoreExecutor
                     $"Profile {currentProfile.ProfileId:D} changed while it was being restored.");
             }
 
+            foreach (var relation in plan.RelationSnapshots.Where(item => item.RelationType != "OWNER"))
+            {
+                await TrashCoordinator.ExecuteAsync(
+                    transaction,
+                    """
+                    INSERT OR IGNORE INTO profile_assets(
+                        profile_id, asset_id, relation_type, provenance_key, created_at_ms, publication_import_unit_id)
+                    SELECT $profileId, $assetId, $relationType, $provenanceKey, $createdAt, $publicationImportUnitId
+                    WHERE EXISTS (
+                        SELECT 1 FROM assets WHERE asset_id = $assetId AND state = 'ACTIVE'
+                    );
+                    """,
+                    cancellationToken,
+                    ("$profileId", DbGuid.Format(currentProfile.ProfileId)),
+                    ("$assetId", DbGuid.Format(relation.AssetId)),
+                    ("$relationType", relation.RelationType),
+                    ("$provenanceKey", (object?)relation.ProvenanceKey ?? DBNull.Value),
+                    ("$createdAt", relation.CreatedAtMilliseconds),
+                    ("$publicationImportUnitId", relation.PublicationImportUnitId is { } publicationUnitId
+                        ? DbGuid.Format(publicationUnitId)
+                        : DBNull.Value)).ConfigureAwait(false);
+
+                await TrashCoordinator.ExecuteAsync(
+                    transaction,
+                    """
+                    UPDATE profile_assets
+                    SET publication_import_unit_id = $publicationImportUnitId
+                    WHERE profile_id = $profileId
+                      AND asset_id = $assetId
+                      AND relation_type = $relationType;
+                    """,
+                    cancellationToken,
+                    ("$publicationImportUnitId", relation.PublicationImportUnitId is { } publicationUnitId
+                        ? DbGuid.Format(publicationUnitId)
+                        : DBNull.Value),
+                    ("$profileId", DbGuid.Format(currentProfile.ProfileId)),
+                    ("$assetId", DbGuid.Format(relation.AssetId)),
+                    ("$relationType", relation.RelationType)).ConfigureAwait(false);
+            }
+
+            if (plan.ActiveIdentitySnapshot is { } identity)
+            {
+                await TrashCoordinator.ExecuteAsync(
+                    transaction,
+                    """
+                    UPDATE identities
+                    SET is_active = 1,
+                        retired_at_ms = $retiredAt,
+                        row_version = row_version + 1
+                    WHERE identity_id = $identityId
+                      AND profile_id = $profileId
+                      AND is_active = 0;
+                    """,
+                    cancellationToken,
+                    ("$retiredAt", identity.RetiredAtMilliseconds is { } retiredAt ? retiredAt : DBNull.Value),
+                    ("$identityId", DbGuid.Format(identity.IdentityId)),
+                    ("$profileId", DbGuid.Format(currentProfile.ProfileId))).ConfigureAwait(false);
+            }
+
             await TrashCoordinator.CheckpointTrashEntryAsync(
                 transaction,
                 trashEntryId,
                 TrashEntryState.Restored,
-                recoveryRelativePath,
+                restoreCheckpoint.RecoveryRelativePath,
                 completedAtMs: now,
                 currentEntry.RowVersion,
                 now,
@@ -392,7 +469,7 @@ public sealed class RestoreExecutor
                 ActivityEventType.ProfileRestored,
                 currentProfile.ProfileId,
                 assetId: null,
-                plan?.OperationId,
+                plan.OperationId,
                 now,
                 cancellationToken).ConfigureAwait(false);
 
@@ -410,12 +487,70 @@ public sealed class RestoreExecutor
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             committed = OperationResult<ProfileRestoreOutcome>.Success(
                 new ProfileRestoreOutcome(trashEntryId, currentProfile.ProfileId, newRowVersion),
-                plan?.OperationId);
+                plan.OperationId);
         }
 
         return await RefreshManifestAfterRestoreAsync(
-                profile.ProfileId, committed, plan?.OperationId, cancellationToken)
+                profile.ProfileId, committed, plan.OperationId, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<OperationResult<ProfileTrashPlan>> PersistProfileRestoreCheckpointAsync(
+        TrashEntryRow entry,
+        ProfileTrashPlan plan,
+        string recoveryRelativePath,
+        string targetManagedRelativePath,
+        CancellationToken cancellationToken)
+    {
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection, _writeCoordinator);
+
+        var currentEntry = await TrashCoordinator.ReadTrashEntryAsync(
+                connection, transaction, entry.TrashEntryId, cancellationToken)
+            .ConfigureAwait(false);
+        if (currentEntry is null)
+        {
+            return OperationResult<ProfileTrashPlan>.NotFound(
+                OperationErrorCode.TrashEntryNotFound,
+                "That Trash record no longer exists.");
+        }
+        if (currentEntry.State != TrashEntryState.InTrash)
+        {
+            return OperationResult<ProfileTrashPlan>.Conflict(
+                OperationErrorCode.TrashPlanStale,
+                "That Profile is no longer in a state that can start Restore.");
+        }
+
+        var currentPlan = ProfileTrashPlan.FromJson(currentEntry.PlanJson);
+        if (currentPlan is null)
+        {
+            return OperationResult<ProfileTrashPlan>.NeedsAttention(
+                OperationErrorCode.TrashPlanUnreadable,
+                "This Profile Trash record cannot be read safely.");
+        }
+        if (currentPlan.RestoreCheckpoint is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResult<ProfileTrashPlan>.Success(currentPlan, currentPlan.OperationId);
+        }
+
+        var checkpointed = currentPlan with
+        {
+            RestoreCheckpoint = new ProfileRestoreCheckpoint(recoveryRelativePath, targetManagedRelativePath),
+        };
+        await TrashCoordinator.CheckpointTrashEntryAsync(
+            transaction,
+            currentEntry.TrashEntryId,
+            TrashEntryState.InTrash,
+            recoveryRelativePath,
+            completedAtMs: null,
+            currentEntry.RowVersion,
+            DbTime.Format(_timeProvider.GetUtcNow()),
+            cancellationToken,
+            checkpointed.ToJson()).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return OperationResult<ProfileTrashPlan>.Success(checkpointed, checkpointed.OperationId);
     }
 
     private Task RefreshRelatedProjectionsAfterRestoreAsync(
@@ -717,16 +852,92 @@ public sealed class RestoreExecutor
                 $"Asset {asset.AssetId:D} changed while it was being restored.");
         }
 
+        var originalOwner = plan.RelationSnapshots.FirstOrDefault(
+            relation => relation.RelationType == "OWNER" && relation.ProfileId == checkpoint.OwnerProfileId);
         await TrashCoordinator.ExecuteAsync(
             transaction,
             """
-            INSERT INTO profile_assets(profile_id, asset_id, relation_type, provenance_key, created_at_ms)
-            VALUES ($profileId, $assetId, 'OWNER', NULL, $now);
+            INSERT INTO profile_assets(
+                profile_id, asset_id, relation_type, provenance_key, created_at_ms, publication_import_unit_id)
+            VALUES ($profileId, $assetId, 'OWNER', $provenanceKey, $createdAt, $publicationImportUnitId);
             """,
             cancellationToken,
             ("$profileId", DbGuid.Format(checkpoint.OwnerProfileId)),
             ("$assetId", DbGuid.Format(asset.AssetId)),
-            ("$now", now)).ConfigureAwait(false);
+            ("$provenanceKey", (object?)originalOwner?.ProvenanceKey ?? DBNull.Value),
+            ("$createdAt", originalOwner?.CreatedAtMilliseconds ?? now),
+            ("$publicationImportUnitId", originalOwner?.PublicationImportUnitId is { } ownerPublicationUnitId
+                ? DbGuid.Format(ownerPublicationUnitId)
+                : DBNull.Value)).ConfigureAwait(false);
+
+        foreach (var relation in plan.RelationSnapshots.Where(item => item.RelationType != "OWNER"))
+        {
+            await TrashCoordinator.ExecuteAsync(
+                transaction,
+                """
+                INSERT OR IGNORE INTO profile_assets(
+                    profile_id, asset_id, relation_type, provenance_key, created_at_ms, publication_import_unit_id)
+                SELECT $profileId, $assetId, $relationType, $provenanceKey, $createdAt, $publicationImportUnitId
+                WHERE EXISTS (
+                    SELECT 1 FROM profiles WHERE profile_id = $profileId AND trashed_at_ms IS NULL
+                );
+                """,
+                cancellationToken,
+                ("$profileId", DbGuid.Format(relation.ProfileId)),
+                ("$assetId", DbGuid.Format(asset.AssetId)),
+                ("$relationType", relation.RelationType),
+                ("$provenanceKey", (object?)relation.ProvenanceKey ?? DBNull.Value),
+                ("$createdAt", relation.CreatedAtMilliseconds),
+                ("$publicationImportUnitId", relation.PublicationImportUnitId is { } publicationUnitId
+                    ? DbGuid.Format(publicationUnitId)
+                    : DBNull.Value)).ConfigureAwait(false);
+
+            await TrashCoordinator.ExecuteAsync(
+                transaction,
+                """
+                UPDATE profile_assets
+                SET publication_import_unit_id = $publicationImportUnitId
+                WHERE profile_id = $profileId
+                  AND asset_id = $assetId
+                  AND relation_type = $relationType;
+                """,
+                cancellationToken,
+                ("$publicationImportUnitId", relation.PublicationImportUnitId is { } publicationUnitId
+                    ? DbGuid.Format(publicationUnitId)
+                    : DBNull.Value),
+                ("$profileId", DbGuid.Format(relation.ProfileId)),
+                ("$assetId", DbGuid.Format(asset.AssetId)),
+                ("$relationType", relation.RelationType)).ConfigureAwait(false);
+        }
+
+        foreach (var appearance in plan.AffectedAppearanceReferences)
+        {
+            await TrashCoordinator.ExecuteAsync(
+                transaction,
+                """
+                UPDATE profiles
+                SET cover_asset_id = CASE
+                        WHEN $restoreCover = 1 AND cover_asset_id IS NULL THEN $assetId
+                        ELSE cover_asset_id
+                    END,
+                    banner_asset_id = CASE
+                        WHEN $restoreBanner = 1 AND banner_asset_id IS NULL THEN $assetId
+                        ELSE banner_asset_id
+                    END,
+                    updated_at_ms = $now,
+                    row_version = row_version + CASE
+                        WHEN ($restoreCover = 1 AND cover_asset_id IS NULL)
+                          OR ($restoreBanner = 1 AND banner_asset_id IS NULL)
+                        THEN 1 ELSE 0 END
+                WHERE profile_id = $profileId AND trashed_at_ms IS NULL;
+                """,
+                cancellationToken,
+                ("$restoreCover", appearance.IsCover ? 1 : 0),
+                ("$restoreBanner", appearance.IsBanner ? 1 : 0),
+                ("$assetId", DbGuid.Format(asset.AssetId)),
+                ("$now", now),
+                ("$profileId", DbGuid.Format(appearance.ProfileId))).ConfigureAwait(false);
+        }
 
         await TrashCoordinator.CheckpointTrashEntryAsync(
             transaction,
@@ -752,9 +963,15 @@ public sealed class RestoreExecutor
             [asset.AssetId],
             CatalogInvalidationDomain.Media,
             newRowVersion));
+        var restoredProfileIds = plan.RelationSnapshots
+            .Select(relation => relation.ProfileId)
+            .Concat(plan.AffectedAppearanceReferences.Select(reference => reference.ProfileId))
+            .Append(checkpoint.OwnerProfileId)
+            .Distinct()
+            .ToArray();
         transaction.QueueInvalidation(new CatalogInvalidation(
             Guid.Empty,
-            [checkpoint.OwnerProfileId],
+            restoredProfileIds,
             CatalogInvalidationDomain.Profile,
             0));
         transaction.QueueInvalidation(new CatalogInvalidation(

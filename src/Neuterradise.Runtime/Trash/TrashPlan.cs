@@ -58,6 +58,8 @@ public sealed record AssetTrashPlan(
 
     public AssetRestoreCheckpoint? RestoreCheckpoint { get; init; }
 
+    public IReadOnlyList<AssetProfileRelationSnapshot> RelationSnapshots { get; init; } = [];
+
     public string ToJson() => JsonSerializer.Serialize(this, TrashPlanJson.Options);
 
     public static AssetTrashPlan? FromJson(string? json)
@@ -106,6 +108,7 @@ public sealed record AssetTrashPlan(
             && ExpectedAssetRowVersion == other.ExpectedAssetRowVersion
             && RestoreCheckpoint == other.RestoreCheckpoint
             && AffectedAppearanceReferences.SequenceEqual(other.AffectedAppearanceReferences)
+            && RelationSnapshots.SequenceEqual(other.RelationSnapshots)
             && ((PackageComponents is null && other.PackageComponents is null)
                 || (PackageComponents is not null && other.PackageComponents is not null && PackageComponents.SequenceEqual(other.PackageComponents)));
     }
@@ -127,6 +130,11 @@ public sealed record AssetTrashPlan(
         foreach (var reference in AffectedAppearanceReferences)
         {
             hash.Add(reference);
+        }
+
+        foreach (var relation in RelationSnapshots)
+        {
+            hash.Add(relation);
         }
 
         if (PackageComponents is not null)
@@ -152,6 +160,32 @@ public sealed record AffectedAppearanceReference(
     Guid ProfileId,
     bool IsCover,
     bool IsBanner);
+
+public sealed record AssetProfileRelationSnapshot(
+    Guid ProfileId,
+    string RelationType,
+    string? ProvenanceKey,
+    Guid? PublicationImportUnitId,
+    long CreatedAtMilliseconds);
+
+public sealed record ProfileRelationSnapshot(
+    Guid AssetId,
+    string RelationType,
+    string? ProvenanceKey,
+    Guid? PublicationImportUnitId,
+    long CreatedAtMilliseconds);
+
+public sealed record ProfileIdentitySnapshot(
+    Guid IdentityId,
+    long RowVersion,
+    long? RetiredAtMilliseconds);
+
+public sealed record ProfileTrashCheckpoint(
+    string RecoveryRelativePath);
+
+public sealed record ProfileRestoreCheckpoint(
+    string RecoveryRelativePath,
+    string TargetManagedRelativePath);
 
 public sealed record ProfileOwnedAssetSnapshot(
     Guid AssetId,
@@ -186,6 +220,16 @@ public sealed record ProfileTrashPlan(
     public Guid? ExpectedCoverAssetId { get; init; }
 
     public Guid? ExpectedBannerAssetId { get; init; }
+
+    public IReadOnlyList<ProfileOwnedAssetDisposition> SelectedDispositions { get; init; } = [];
+
+    public IReadOnlyList<ProfileRelationSnapshot> RelationSnapshots { get; init; } = [];
+
+    public ProfileIdentitySnapshot? ActiveIdentitySnapshot { get; init; }
+
+    public ProfileTrashCheckpoint? TrashCheckpoint { get; init; }
+
+    public ProfileRestoreCheckpoint? RestoreCheckpoint { get; init; }
 
     public string ToJson() => JsonSerializer.Serialize(this, TrashPlanJson.Options);
 
@@ -227,7 +271,12 @@ public sealed record ProfileTrashPlan(
             && ExpectedBannerAssetId == other.ExpectedBannerAssetId
             && OperationId == other.OperationId
             && PreparedAtUtc == other.PreparedAtUtc
-            && OwnedActiveAssets.SequenceEqual(other.OwnedActiveAssets);
+            && ActiveIdentitySnapshot == other.ActiveIdentitySnapshot
+            && TrashCheckpoint == other.TrashCheckpoint
+            && RestoreCheckpoint == other.RestoreCheckpoint
+            && OwnedActiveAssets.SequenceEqual(other.OwnedActiveAssets)
+            && SelectedDispositions.SequenceEqual(other.SelectedDispositions)
+            && RelationSnapshots.SequenceEqual(other.RelationSnapshots);
     }
 
     public override int GetHashCode()
@@ -241,9 +290,23 @@ public sealed record ProfileTrashPlan(
         hash.Add(ExpectedBannerAssetId);
         hash.Add(OperationId);
 
+        hash.Add(ActiveIdentitySnapshot);
+        hash.Add(TrashCheckpoint);
+        hash.Add(RestoreCheckpoint);
+
         foreach (var asset in OwnedActiveAssets)
         {
             hash.Add(asset);
+        }
+
+        foreach (var disposition in SelectedDispositions)
+        {
+            hash.Add(disposition);
+        }
+
+        foreach (var relation in RelationSnapshots)
+        {
+            hash.Add(relation);
         }
 
         return hash.ToHashCode();
