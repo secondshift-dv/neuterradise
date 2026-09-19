@@ -322,11 +322,11 @@ public sealed class ProfileManifestWriter
 
         if (string.IsNullOrWhiteSpace(currentRelative))
         {
-            var token = new ProfileStorageToken(profile.StorageToken ?? "P-000000");
-            currentRelative = new ManagedPathPlanner().PlanProfile(
-                profile.ProfileId,
-                profile.DisplayName,
-                token).ProfileFolderRelativePath;
+            // X17: manifest repair is not a placement authority. A missing persisted folder must be
+            // reconciled by the storage lifecycle before any writer is allowed to materialize bytes.
+            return new StorageOperationResult(
+                StorageOperationStatus.NeedsAttention,
+                SafeErrorDetail: $"Profile {profileId} has no persisted managed folder authority.");
         }
 
         var absFolder = catalog.Paths.ResolveVaultRelativePath(currentRelative);
