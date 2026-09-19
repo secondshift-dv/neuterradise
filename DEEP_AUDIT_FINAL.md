@@ -1454,6 +1454,15 @@ No cancellation settlement can undo or race a concurrently completing finalizer 
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** R8 contention/crash matrix only.
 
+### R4 post-review corrective closure — 2026-09-19
+
+**Corrective SHA:** `2828b2b1eee8925b021ae557705a5ed12aa218ea`  
+**Review defect:** Retry still bypassed the per-ImportUnit mutation authority from `ImportViewModel`; stale control side effects could also project into Asset jobs independently of the unit transition.  
+**Correction:** Retry is now routed through `ImportUnitControlAuthority.RetryAsync`, which acquires both process-wide mutation admission and `ImportUnitMutations.EnterAsync(unitId)`. Clear-history item commands use the same per-unit authority.  
+**Static revalidation:** Finalizer/cancel/commit/recovery/control/Retry now share the same unit-level serialization boundary for the user-facing mutation span.  
+**Source status:** SOURCE-CLOSED after corrective review  
+**Runtime status:** NOT-YET-VERIFIED — R8 remains the executable contention/fault-injection authority.
+
 ---
 
 ## X21 — Lifecycle/checkpoint writes are not sufficiently monotonic against stale writers
@@ -1498,6 +1507,15 @@ Database assertion: no illegal reverse/terminal-escape transition.
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** R8 lifecycle-race matrix only.
+
+### R4 post-review corrective closure — 2026-09-19
+
+**Corrective SHA:** `2828b2b1eee8925b021ae557705a5ed12aa218ea`  
+**Review defect:** `SetPausedAsync` and `ResumeUnitAsync` mutated Asset jobs even when the guarded `import_units` UPDATE changed zero rows. Retry also attempted to resume `FAILED_RETRYABLE` HashAsset jobs through `JobWrites.ResumeAsync`, whose SQL only accepts `PAUSED`.  
+**Correction:** subordinate job projection executes only after a successful unit transition. Pre-Stage-1 Retry now commits `FAILED_RETRYABLE → INTAKE` and `HashAsset FAILED_RETRYABLE → PENDING` in the same Catalog transaction, clearing retry timing/error/completion fields without resetting attempt authority.  
+**Static revalidation:** stale terminal/control commands are DB no-ops with no job side effects; Retry no longer depends on an incompatible PAUSED-only API.  
+**Source status:** SOURCE-CLOSED after corrective review  
+**Runtime status:** NOT-YET-VERIFIED — stale-writer/race execution remains R8.
 
 ---
 
@@ -1544,6 +1562,15 @@ Two-process lock test around shutdown timeout.
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** R8 shutdown timing evidence.
+
+### R4 post-review corrective closure — 2026-09-19
+
+**Corrective SHA:** `1668aeaf231459b97bb2651a2d4325bbbfe32265`  
+**Review defect:** `JobDispatcher.StopAsync` could hit its bounded wait, signal `WorkerShutdown.Cancel()`, and return without awaiting worker task termination. That made higher-level scheduler/runtime disposal capable of completing while a mutation-capable worker was still alive.  
+**Correction:** the bounded phase now decides only when cancellation is signalled. After signalling, `StopAsync` always awaits the original `Task.WhenAll(workers)` to terminal completion/fault before returning. Scheduler/runtime disposal therefore cannot retire ahead of dispatcher workers, and `ShutdownCoordinator` cannot reach `BootstrapContext.DisposeAsync`/VaultLock release while they still run.  
+**Static revalidation:** `ShutdownCoordinator → ProductionRuntimeRegistry → JobScheduler → JobDispatcher` ownership is strictly nested through actual task termination.  
+**Source status:** SOURCE-CLOSED after corrective review  
+**Runtime status:** NOT-YET-VERIFIED — slow/non-cooperative worker timing remains R8.
 
 ---
 
@@ -1644,6 +1671,16 @@ A terminal/missing unit can never become the persisted focused import and cannot
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** R8 control-race matrix.
+
+### R4 post-review corrective closure — 2026-09-19
+
+**Corrective SHA:** `2828b2b1eee8925b021ae557705a5ed12aa218ea`  
+**Review defect:** although stale focus was rejected, `ResumeUnitAsync` could already have changed Asset jobs before `FocusAsync` rejected a terminal/stale unit. `SetPausedAsync` had the symmetric stale side effect.  
+**Correction:** Pause/Resume subordinate job updates are now conditioned on `changed > 0` from the lifecycle-eligible unit UPDATE. A stale/terminal Start/Pause command therefore cannot change job state before focus validation.  
+**Static revalidation:** terminal/missing/stale units neither become focus authority nor alter runnable/paused Asset work through the stale command.  
+**Source status:** SOURCE-CLOSED after corrective review  
+**Runtime status:** NOT-YET-VERIFIED — Start/Pause/Prioritize race execution remains R8.
+
 ## X25 — Optional Stage 2 capabilities can incorrectly gate readiness or terminal failure
 
 **Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
@@ -2653,6 +2690,15 @@ Clean marker may be written only after command leases are zero and mutation auth
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** R8 concurrency execution evidence.
+
+### R4 post-review corrective closure — 2026-09-19
+
+**Corrective SHA:** `2828b2b1eee8925b021ae557705a5ed12aa218ea`  
+**Review defect:** `ImportViewModel.RetryUnitAsync`, `ClearHistoryItemAsync`, and `ClearHistoryAsync` were direct durable-write paths outside `CatalogMutationAdmissionGate`; Retry also performed job writes outside the per-unit authority.  
+**Correction:** all three commands now route through `ImportUnitControlAuthority`. Retry/Clear-one acquire process-wide admission plus per-unit serialization; Clear-all acquires process-wide admission and executes a terminal-only bulk write under the Catalog write coordinator. The ViewModel no longer owns those durable write sequences.  
+**Static revalidation:** after `MutationAdmission.Close()`, these previously uncovered Import commands can no longer begin a new mutation.  
+**Source status:** SOURCE-CLOSED after corrective review  
+**Runtime status:** NOT-YET-VERIFIED — mutation-storm shutdown execution remains R8.
 
 ---
 
@@ -3838,7 +3884,7 @@ Acceptance:
 
 ## Phase R4 — Fix scheduler and lifecycle concurrency
 
-**Implementation status — 2026-09-19:** SOURCE-CLOSED through `469eee8b14609032cee280f9bf060d858dc98550`. Primary findings X19–X26, X52–X55, and X66 are SOURCE-CLOSED after corrective static revalidation. R2-owned companions X69/X73 were revalidated without duplicate implementation. X51 remains REJECTED. This does not claim build/test/runtime/fault-injection acceptance; executable evidence remains R8 under AGENTS.md.
+**Implementation status — 2026-09-19:** SOURCE-CLOSED after post-implementation review and corrective fixes through `1668aeaf231459b97bb2651a2d4325bbbfe32265` (Import authority correction `2828b2b1eee8925b021ae557705a5ed12aa218ea`; dispatcher lifetime correction `1668aeaf231459b97bb2651a2d4325bbbfe32265`). The earlier source-closing SHA `469eee8b14609032cee280f9bf060d858dc98550` is retained as historical provenance but is superseded for X20/X21/X22/X24/X54 correctness. Primary findings X19–X26, X52–X55, and X66 are SOURCE-CLOSED at source level; R2-owned companions X69/X73 remain revalidation-only and X51 remains REJECTED. This does not claim build/test/runtime/fault-injection acceptance; executable evidence remains R8 under AGENTS.md.
 
 Primary target:
 
