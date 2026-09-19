@@ -26,14 +26,14 @@ public sealed class ImportPriorityOperations
     public async Task<Guid?> GetFocusedImportUnitAsync(CancellationToken cancellationToken = default) =>
         Parse(await _settings.GetSettingValueAsync(SettingKey, cancellationToken).ConfigureAwait(false));
 
-    public async Task FocusAsync(Guid importUnitId, CancellationToken cancellationToken = default)
+    public async Task<bool> FocusAsync(Guid importUnitId, CancellationToken cancellationToken = default)
     {
         if (importUnitId == Guid.Empty)
         {
             throw new ArgumentException("A focused import must have a stable identifier.", nameof(importUnitId));
         }
 
-        await _jobs
+        var focused = await _jobs
             .ChangeFocusedImportUnitAsync(
                 SettingKey,
                 importUnitId,
@@ -41,6 +41,7 @@ public sealed class ImportPriorityOperations
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         JobSignals.Raise();
+        return focused == importUnitId;
     }
 
     public async Task ClearIfFocusedAsync(Guid importUnitId, CancellationToken cancellationToken = default)

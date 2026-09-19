@@ -64,6 +64,9 @@ public sealed class ImportUnitControlAuthority
             return false;
         }
 
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         var paused = await _unitWrites.SetPausedAsync(unitId, paused: true, cancellationToken)
             .ConfigureAwait(false);
         if (!paused)
@@ -94,8 +97,15 @@ public sealed class ImportUnitControlAuthority
             return false;
         }
 
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         await _unitWrites.ResumeUnitAsync(unitId, cancellationToken).ConfigureAwait(false);
-        await _priority.FocusAsync(unitId, cancellationToken).ConfigureAwait(false);
+        if (!await _priority.FocusAsync(unitId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         _finalizer?.Wake(unitId);
         return true;
     }
@@ -110,6 +120,9 @@ public sealed class ImportUnitControlAuthority
         {
             return;
         }
+
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
 
         await _priority.FocusAsync(unitId, cancellationToken).ConfigureAwait(false);
     }
@@ -128,6 +141,9 @@ public sealed class ImportUnitControlAuthority
         {
             return new ImportCancellationOutcome(unitId, ImportCancellationResult.UnitNotFound);
         }
+
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
 
         // Persist CANCELLED first. This cancels idle work and makes the durable lifecycle authority
         // block future import scheduling before we wait for running handlers.

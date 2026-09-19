@@ -42,6 +42,9 @@ internal sealed class ImportCancellationSettlement
                 "IMPORT_UNIT_NOT_FOUND");
         }
 
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         var durable = await ReadDurableStateAsync(unitId, cancellationToken).ConfigureAwait(false);
         if (durable is null)
         {

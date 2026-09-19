@@ -207,6 +207,9 @@ public sealed class Stage2PreparationCoordinator
         Guid unitId,
         CancellationToken cancellationToken = default)
     {
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         var readiness = await EvaluateReadinessAsync(unitId, cancellationToken).ConfigureAwait(false);
         var unit = await _importReads.GetUnitSummaryAsync(unitId, cancellationToken).ConfigureAwait(false);
         if (unit is null || unit.State is ImportUnitState.Cancelled or ImportUnitState.FailedTerminal

@@ -292,6 +292,9 @@ public sealed class ImportFinalizer : IAsyncDisposable
                     }
                 }
 
+                await using var mutationLease = await _catalog.ImportUnitMutations
+                    .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
                 ImportFinalizeOutcome outcome;
                 try
                 {
@@ -328,6 +331,9 @@ public sealed class ImportFinalizer : IAsyncDisposable
         Guid unitId,
         CancellationToken cancellationToken = default)
     {
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         var model = await _operations.LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false);
         if (model is null)
         {
@@ -648,7 +654,12 @@ public sealed class ImportFinalizer : IAsyncDisposable
                     ? ImportUnitState.FailedRetryable
                     : ImportUnitState.FailedTerminal;
                 await _catalog.ImportWrites
-                    .UpdateUnitStateAsync(unitId, terminalState, cancellationToken)
+                    .UpdateUnitStateAsync(
+                        unitId,
+                        terminalState,
+                        expectedState: summary.State,
+                        expectedRowVersion: null,
+                        cancellationToken)
                     .ConfigureAwait(false);
 
                 if (!retryable)

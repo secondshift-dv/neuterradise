@@ -724,6 +724,35 @@ public sealed class JobWrites
             return current;
         }
 
+        if (focusedImportUnitId is { } requestedFocus)
+        {
+            await using var eligible = transaction.CreateCommand(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM import_units
+                    WHERE import_unit_id = $unitId
+                      AND is_paused = 0
+                      AND state IN ('INTAKE','PREPARING','READY_FOR_VERIFICATION','FAILED_RETRYABLE')
+                );
+                """);
+            eligible.Parameters.AddWithValue("$unitId", DbGuid.Format(requestedFocus));
+            var canFocus = Convert.ToInt32(
+                await eligible.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                System.Globalization.CultureInfo.InvariantCulture) == 1;
+
+            if (!canFocus)
+            {
+                if (current != requestedFocus)
+                {
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return current;
+                }
+
+                focusedImportUnitId = null;
+            }
+        }
+
         if (current == focusedImportUnitId)
         {
             if (focusedImportUnitId is { } targetId)
