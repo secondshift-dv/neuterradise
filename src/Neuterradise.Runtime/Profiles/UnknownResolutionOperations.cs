@@ -18,6 +18,7 @@ public sealed class UnknownResolutionOperations
 {
     private readonly CatalogConnectionFactory _connectionFactory;
     private readonly CatalogWriteCoordinator _writeCoordinator;
+    private readonly VaultPaths _paths;
     private readonly ManagedPathPlanner _pathPlanner;
     private readonly StorageTokenAllocator _tokenAllocator;
     private readonly AssetOwnerRelocationEnqueue? _ownerRelocationEnqueue;
@@ -33,8 +34,9 @@ public sealed class UnknownResolutionOperations
         ArgumentNullException.ThrowIfNull(catalog);
         _connectionFactory = catalog.ConnectionFactory;
         _writeCoordinator = catalog.WriteCoordinator;
+        _paths = catalog.Paths;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _pathPlanner = pathPlanner ?? new ManagedPathPlanner(catalog.Paths.Root);
+        _pathPlanner = pathPlanner ?? new ManagedPathPlanner(_paths.Root);
         _ownerRelocationEnqueue = ownerRelocationEnqueue;
         _tokenAllocator = tokenAllocator ?? new StorageTokenAllocator();
     }
@@ -246,6 +248,9 @@ public sealed class UnknownResolutionOperations
 
             var now = DbTime.Format(_timeProvider.GetUtcNow());
             var resolvedAssetOutcomes = new List<UnknownResolvedAssetOutcome>();
+            var occupiedAssetPaths = await ReadOccupiedAssetPathsAsync(
+                transaction,
+                cancellationToken).ConfigureAwait(false);
 
             if (allAlreadyTransferred)
             {
@@ -299,36 +304,22 @@ public sealed class UnknownResolutionOperations
                     continue;
                 }
 
-                string targetFilePath;
-                string targetRelativePath;
-                string targetFileName;
-                if (asset.MediaType == MediaType.Model && asset.DependencyStatus != AssetDependencyStatus.SelfContained)
-                {
-                    var pkgPlan = _pathPlanner.PlanModelPackage(
+                if (!TryAllocateRelocationTarget(
+                        asset,
                         destinationProfile.ProfileId,
                         destinationProfile.DisplayName!,
-                        new ProfileStorageToken(destStorageToken),
-                        asset.AssetId,
-                        new AssetStorageToken(asset.StorageToken!),
-                        asset.CurrentManagedFileName!);
-                    targetFilePath = pkgPlan.PrimaryManagedRelativePath;
-                    targetRelativePath = pkgPlan.PackageDirectoryRelativePath;
-                    targetFileName = pkgPlan.PrimaryFileName;
-                }
-                else
+                        destStorageToken,
+                        occupiedAssetPaths,
+                        out var relocationTarget))
                 {
-                    var plan = _pathPlanner.PlanAsset(
-                        destinationProfile.ProfileId,
-                        destinationProfile.DisplayName!,
-                        new ProfileStorageToken(destStorageToken),
-                        asset.AssetId,
-                        new AssetStorageToken(asset.StorageToken!),
-                        asset.MediaType,
-                        Path.GetExtension(asset.CurrentManagedFileName!));
-                    targetFilePath = plan.ManagedFileRelativePath!;
-                    targetRelativePath = targetFilePath[..targetFilePath.LastIndexOf('/')];
-                    targetFileName = plan.ManagedFileName!;
+                    return OperationResult<UnknownResolutionOutcome>.NeedsAttention(
+                        OperationErrorCode.ProfilePathReconciliationBlocked,
+                        $"No collision-safe managed destination remains for media item {asset.AssetId:D}.");
                 }
+
+                var targetFilePath = relocationTarget.TargetFilePath;
+                var targetRelativePath = relocationTarget.TargetRelativePath;
+                var targetFileName = relocationTarget.TargetFileName;
 
                 var currentFilePath = $"{asset.CurrentManagedRelativePath}/{asset.CurrentManagedFileName}";
                 var targetFilePathText = $"{targetRelativePath}/{targetFileName}";
@@ -543,6 +534,208 @@ public sealed class UnknownResolutionOperations
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return OperationResult.Success() with { UserMessage = "Media remains safely unassigned." };
     }
+
+    private bool TryAllocateProfileFolder(
+        Guid profileId,
+        string displayName,
+        string storageToken,
+        HashSet<string> occupiedProfileFolders,
+        out string profileFolder)
+    {
+        profileFolder = string.Empty;
+        try
+        {
+            var plan = _pathPlanner.AllocateProfilePlan(
+                profileId,
+                displayName,
+                new ProfileStorageToken(storageToken),
+                candidate =>
+                {
+                    var relative = candidate.ProfileFolderRelativePath.Replace('\\', '/');
+                    if (occupiedProfileFolders.Contains(relative))
+                    {
+                        return true;
+                    }
+
+                    try
+                    {
+                        return Directory.Exists(_paths.ResolveVaultRelativePath(relative));
+                    }
+                    catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                    {
+                        return true;
+                    }
+                });
+            profileFolder = plan.ProfileFolderRelativePath;
+            occupiedProfileFolders.Add(profileFolder.Replace('\\', '/'));
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or ManagedPathPlanningException)
+        {
+            return false;
+        }
+    }
+
+    private bool TryAllocateRelocationTarget(
+        AssetResolutionState asset,
+        Guid destinationProfileId,
+        string destinationDisplayName,
+        string destinationStorageToken,
+        HashSet<string> occupiedAssetPaths,
+        out RelocationTarget target)
+    {
+        target = default!;
+        try
+        {
+            var currentFilePath = $"{asset.CurrentManagedRelativePath}/{asset.CurrentManagedFileName}"
+                .Replace('\\', '/');
+
+            if (asset.MediaType == MediaType.Model
+                && asset.DependencyStatus != AssetDependencyStatus.SelfContained)
+            {
+                var package = _pathPlanner.AllocateModelPackagePlan(
+                    destinationProfileId,
+                    destinationDisplayName,
+                    new ProfileStorageToken(destinationStorageToken),
+                    asset.AssetId,
+                    new AssetStorageToken(asset.StorageToken!),
+                    asset.CurrentManagedFileName!,
+                    candidate =>
+                    {
+                        var primary = candidate.PrimaryManagedRelativePath.Replace('\\', '/');
+                        if (string.Equals(primary, currentFilePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return false;
+                        }
+
+                        if (occupiedAssetPaths.Contains(primary))
+                        {
+                            return true;
+                        }
+
+                        try
+                        {
+                            return Directory.Exists(_paths.ResolveVaultRelativePath(
+                                candidate.PackageDirectoryRelativePath));
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                        {
+                            return true;
+                        }
+                    });
+
+                var primaryPath = package.PrimaryManagedRelativePath.Replace('\\', '/');
+                occupiedAssetPaths.Add(primaryPath);
+                target = new RelocationTarget(
+                    package.PrimaryManagedRelativePath,
+                    package.PackageDirectoryRelativePath,
+                    package.PrimaryFileName);
+                return true;
+            }
+
+            var plan = _pathPlanner.AllocateAssetPlan(
+                destinationProfileId,
+                destinationDisplayName,
+                new ProfileStorageToken(destinationStorageToken),
+                asset.AssetId,
+                new AssetStorageToken(asset.StorageToken!),
+                asset.MediaType,
+                Path.GetExtension(asset.CurrentManagedFileName!),
+                candidate =>
+                {
+                    var relative = candidate.ManagedFileRelativePath!.Replace('\\', '/');
+                    if (string.Equals(relative, currentFilePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+
+                    if (occupiedAssetPaths.Contains(relative))
+                    {
+                        return true;
+                    }
+
+                    try
+                    {
+                        return File.Exists(_paths.ResolveVaultRelativePath(relative));
+                    }
+                    catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                    {
+                        return true;
+                    }
+                });
+
+            var path = plan.ManagedFileRelativePath!;
+            occupiedAssetPaths.Add(path.Replace('\\', '/'));
+            target = new RelocationTarget(
+                path,
+                path[..path.LastIndexOf('/')],
+                plan.ManagedFileName!);
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or ManagedPathPlanningException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<HashSet<string>> ReadOccupiedProfileFoldersAsync(
+        CatalogTransaction transaction,
+        Guid excludedProfileId,
+        CancellationToken cancellationToken)
+    {
+        var occupied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var command = transaction.CreateCommand(
+            """
+            SELECT current_managed_relative_path
+            FROM profiles
+            WHERE profile_id <> $profileId
+              AND current_managed_relative_path IS NOT NULL
+            UNION
+            SELECT target_managed_relative_path
+            FROM profiles
+            WHERE profile_id <> $profileId
+              AND target_managed_relative_path IS NOT NULL;
+            """);
+        command.Parameters.AddWithValue("$profileId", DbGuid.Format(excludedProfileId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            occupied.Add(reader.GetString(0).Replace('\\', '/'));
+        }
+
+        return occupied;
+    }
+
+    private static async Task<HashSet<string>> ReadOccupiedAssetPathsAsync(
+        CatalogTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var occupied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var command = transaction.CreateCommand(
+            """
+            SELECT current_managed_relative_path || '/' || current_managed_file_name
+            FROM assets
+            WHERE current_managed_relative_path IS NOT NULL
+              AND current_managed_file_name IS NOT NULL
+            UNION
+            SELECT target_managed_relative_path || '/' || target_managed_file_name
+            FROM assets
+            WHERE target_managed_relative_path IS NOT NULL
+              AND target_managed_file_name IS NOT NULL;
+            """);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            occupied.Add(reader.GetString(0).Replace('\\', '/'));
+        }
+
+        return occupied;
+    }
+
+    private sealed record RelocationTarget(
+        string TargetFilePath,
+        string TargetRelativePath,
+        string TargetFileName);
 
     private static async Task<List<Guid>> ReadAssignmentClusterAssetIdsAsync(
         CatalogTransaction transaction,
@@ -852,11 +1045,21 @@ public sealed class UnknownResolutionOperations
             var profileToken = await AllocateUniqueProfileStorageTokenAsync(
                 transaction, newProfileId, cancellationToken).ConfigureAwait(false);
 
-            var profilePlan = _pathPlanner.PlanProfile(
+            var occupiedProfileFolders = await ReadOccupiedProfileFoldersAsync(
+                transaction,
                 newProfileId,
-                normalizedDisplayName,
-                new ProfileStorageToken(profileToken));
-            var profileFolder = profilePlan.ProfileFolderRelativePath;
+                cancellationToken).ConfigureAwait(false);
+            if (!TryAllocateProfileFolder(
+                    newProfileId,
+                    normalizedDisplayName,
+                    profileToken,
+                    occupiedProfileFolders,
+                    out var profileFolder))
+            {
+                return OperationResult<UnknownResolutionOutcome>.NeedsAttention(
+                    OperationErrorCode.ProfilePathReconciliationBlocked,
+                    "No collision-safe Profile folder remains for the requested Profile.");
+            }
 
             var now = DbTime.Format(_timeProvider.GetUtcNow());
 
@@ -963,39 +1166,28 @@ public sealed class UnknownResolutionOperations
             }
 
             var resolvedAssetOutcomes = new List<UnknownResolvedAssetOutcome>();
+            var occupiedAssetPaths = await ReadOccupiedAssetPathsAsync(
+                transaction,
+                cancellationToken).ConfigureAwait(false);
 
             foreach (var asset in assets)
             {
-                string targetFilePath;
-                string targetRelativePath;
-                string targetFileName;
-                if (asset.MediaType == MediaType.Model && asset.DependencyStatus != AssetDependencyStatus.SelfContained)
-                {
-                    var pkgPlan = _pathPlanner.PlanModelPackage(
+                if (!TryAllocateRelocationTarget(
+                        asset,
                         newProfileId,
                         normalizedDisplayName,
-                        new ProfileStorageToken(profileToken),
-                        asset.AssetId,
-                        new AssetStorageToken(asset.StorageToken!),
-                        asset.CurrentManagedFileName!);
-                    targetFilePath = pkgPlan.PrimaryManagedRelativePath;
-                    targetRelativePath = pkgPlan.PackageDirectoryRelativePath;
-                    targetFileName = pkgPlan.PrimaryFileName;
-                }
-                else
+                        profileToken,
+                        occupiedAssetPaths,
+                        out var relocationTarget))
                 {
-                    var plan = _pathPlanner.PlanAsset(
-                        newProfileId,
-                        normalizedDisplayName,
-                        new ProfileStorageToken(profileToken),
-                        asset.AssetId,
-                        new AssetStorageToken(asset.StorageToken!),
-                        asset.MediaType,
-                        Path.GetExtension(asset.CurrentManagedFileName!));
-                    targetFilePath = plan.ManagedFileRelativePath!;
-                    targetRelativePath = targetFilePath[..targetFilePath.LastIndexOf('/')];
-                    targetFileName = plan.ManagedFileName!;
+                    return OperationResult<UnknownResolutionOutcome>.NeedsAttention(
+                        OperationErrorCode.ProfilePathReconciliationBlocked,
+                        $"No collision-safe managed destination remains for media item {asset.AssetId:D}.");
                 }
+
+                var targetFilePath = relocationTarget.TargetFilePath;
+                var targetRelativePath = relocationTarget.TargetRelativePath;
+                var targetFileName = relocationTarget.TargetFileName;
 
                 var currentFilePath = $"{asset.CurrentManagedRelativePath}/{asset.CurrentManagedFileName}";
                 var targetFilePathText = $"{targetRelativePath}/{targetFileName}";
