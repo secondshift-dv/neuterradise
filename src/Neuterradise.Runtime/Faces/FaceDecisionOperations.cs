@@ -105,17 +105,21 @@ public sealed class FaceDecisionOperations
             now,
             cancellationToken).ConfigureAwait(false);
 
+        var embeddingSpace = GetEmbeddingSpace(detection);
         var sampleCreated = false;
         if (detection.Embedding is not null)
         {
+            var sampleSpace = embeddingSpace
+                ?? throw new CatalogInvariantException(
+                    $"Face {command.FaceId:D} carries an embedding without canonical embedding provenance.");
             await InsertIdentitySampleAsync(
                 transaction,
                 command.FaceId,
                 targetIdentityId.Value,
                 detection.Embedding,
-                detection.EmbeddingSpaceKey!,
-                detection.ModelId,
-                detection.ModelVersion,
+                sampleSpace.Canonical,
+                sampleSpace.ModelId,
+                sampleSpace.ModelVersion,
                 now,
                 cancellationToken).ConfigureAwait(false);
             sampleCreated = true;
@@ -153,6 +157,10 @@ public sealed class FaceDecisionOperations
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (sampleCreated && embeddingSpace is { } committedSpace)
+        {
+            IdentityBankProvider.InvalidateCatalogSpace(_catalog, committedSpace);
+        }
 
         return OperationResult<FaceDecisionOutcome>.Success(
             new FaceDecisionOutcome(
@@ -331,6 +339,7 @@ public sealed class FaceDecisionOperations
         }
 
         var owner = await ReadOwnerAsync(transaction, detection.AssetId, cancellationToken).ConfigureAwait(false);
+        var embeddingSpace = GetEmbeddingSpace(detection);
 
         var now = DbTime.Format(_timeProvider.GetUtcNow());
         var newRowVersion = detection.RowVersion + 1;
@@ -359,14 +368,17 @@ public sealed class FaceDecisionOperations
 
             if (detection.Embedding is not null)
             {
+                var sampleSpace = embeddingSpace
+                    ?? throw new CatalogInvariantException(
+                        $"Face {command.FaceId:D} carries an embedding without canonical embedding provenance.");
                 await InsertIdentitySampleAsync(
                     transaction,
                     command.FaceId,
                     newId,
                     detection.Embedding,
-                    detection.EmbeddingSpaceKey!,
-                    detection.ModelId,
-                    detection.ModelVersion,
+                    sampleSpace.Canonical,
+                    sampleSpace.ModelId,
+                    sampleSpace.ModelVersion,
                     now,
                     cancellationToken).ConfigureAwait(false);
                 sampleCreated = true;
@@ -428,6 +440,10 @@ public sealed class FaceDecisionOperations
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (embeddingSpace is { } committedSpace)
+        {
+            IdentityBankProvider.InvalidateCatalogSpace(_catalog, committedSpace);
+        }
 
         return OperationResult<FaceDecisionOutcome>.Success(
             new FaceDecisionOutcome(
@@ -436,6 +452,22 @@ public sealed class FaceDecisionOperations
                 newRowVersion,
                 sampleCreated,
                 appearsEnsured));
+    }
+
+    private static EmbeddingSpaceKey? GetEmbeddingSpace(DetectionRow detection)
+    {
+        if (detection.Embedding is null)
+        {
+            return null;
+        }
+
+        if (!EmbeddingSpaceKey.TryParse(detection.EmbeddingSpaceKey, out var space))
+        {
+            throw new CatalogInvariantException(
+                "An embedding-bearing FaceDetection must carry a canonical SFace embedding-space provenance key.");
+        }
+
+        return space;
     }
 
     private static async Task<DetectionRow?> ReadDetectionAsync(

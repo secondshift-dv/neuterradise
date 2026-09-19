@@ -192,10 +192,23 @@ public sealed class ProfilingFaceAnalysisJobOperation : IFaceAnalysisJobOperatio
             if (response.MessageType == ProfilingMessageType.Error)
             {
                 var error = response.DeserializePayload<ErrorPayload>();
+                if (string.Equals(error?.ErrorCode, "CANCELLED", StringComparison.Ordinal))
+                {
+                    return JobExecutionResult.Cancelled(
+                        error?.ErrorMessage ?? "FACE analysis was cancelled by the Profiling Worker.");
+                }
+
+                var classification = error?.ErrorCode switch
+                {
+                    "CONTENT_MISMATCH" or "FACE_INPUT_INVALID" =>
+                        JobFailureClassification.ContentMismatch,
+                    _ when error?.IsFatal == true =>
+                        JobFailureClassification.DeterministicInvalidInput,
+                    _ => JobFailureClassification.WorkerDisconnected,
+                };
+
                 return JobExecutionResult.Failed(
-                    error?.IsFatal == true
-                        ? JobFailureClassification.DeterministicInvalidInput
-                        : JobFailureClassification.WorkerDisconnected,
+                    classification,
                     error?.ErrorCode ?? "FACE_WORKER_ERROR",
                     error?.ErrorMessage ?? "The Profiling Worker reported an unspecified error.");
             }
@@ -415,77 +428,201 @@ public sealed class ProfilingFaceAnalysisJobOperation : IFaceAnalysisJobOperatio
             space.Canonical,
             samples.Select(static sample => sample.IdentitySampleId));
 
-        var buildResponse = await _sendAsync(
-                ProfilingEnvelope.Create(
+        var chunks = CreateIdentityIndexChunks(space, signature, samples);
+        var releaseRequired = false;
+        try
+        {
+            BuildIdentityIndexResult? completedBuild = null;
+            for (var chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var request = new BuildIdentityIndexRequest(
+                    space.Canonical,
+                    space.ModelId,
+                    space.ModelVersion,
+                    signature,
+                    chunkIndex,
+                    isFinalChunk: chunkIndex == chunks.Count - 1,
+                    chunks[chunkIndex]);
+                var envelope = ProfilingEnvelope.Create(
                     ProfilingMessageType.BuildIdentityIndex,
-                    new BuildIdentityIndexRequest(
-                        space.Canonical,
-                        space.ModelId,
-                        space.ModelVersion,
-                        samples)),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (buildResponse.MessageType != ProfilingMessageType.BuildIdentityIndexResult)
-        {
-            return empty;
-        }
+                    request);
 
-        var suggestions = new Dictionary<string, FaceSuggestionEvidenceV1>(StringComparer.Ordinal);
-        foreach (var probe in probes)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var matchResponse = await _sendAsync(
-                    ProfilingEnvelope.Create(
-                        ProfilingMessageType.MatchIdentityCandidates,
-                        new MatchIdentityCandidatesRequest(
-                            space.Canonical,
-                            space.ModelId,
-                            space.ModelVersion,
-                            probe.Embedding ?? [],
-                            SuggestionThreshold,
-                            MaximumSuggestions)),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (matchResponse.MessageType != ProfilingMessageType.MatchIdentityCandidatesResult)
-            {
-                continue;
-            }
-
-            var matched = matchResponse.DeserializePayload<MatchIdentityCandidatesResult>();
-            var ranked = (matched?.Candidates ?? [])
-                .Where(candidate => candidate.Score >= SuggestionThreshold)
-                .OrderByDescending(static candidate => candidate.Score)
-                .ThenBy(static candidate => candidate.IdentityId.ToString("D"), StringComparer.Ordinal)
-                .Take(MaximumSuggestions)
-                .Select(candidate => new FaceSuggestionEntryV1
+                if (ProfilingProtocolSerializer.MeasurePayloadSize(envelope)
+                    > ProfilingProtocolVersion.MaximumFramePayloadSize)
                 {
-                    IdentityId = candidate.IdentityId,
-                    Similarity = candidate.Score,
-                })
-                .ToArray();
-            if (ranked.Length == 0)
-            {
-                continue;
+                    throw new ProfilingProtocolException(
+                        $"Identity-index chunk {chunkIndex} exceeds the protocol frame limit.");
+                }
+
+                releaseRequired = true;
+                var buildResponse = await _sendAsync(envelope, cancellationToken)
+                    .ConfigureAwait(false);
+                if (buildResponse.MessageType != ProfilingMessageType.BuildIdentityIndexResult)
+                {
+                    return empty;
+                }
+
+                var buildResult = buildResponse.DeserializePayload<BuildIdentityIndexResult>();
+                if (buildResult is null)
+                {
+                    return empty;
+                }
+
+                if (buildResult.IsComplete)
+                {
+                    completedBuild = buildResult;
+                }
             }
 
-            suggestions[probe.DetectionKey] = new FaceSuggestionEvidenceV1
+            if (completedBuild is null)
             {
-                EmbeddingSpaceKey = space.Canonical,
-                BankSignature = signature,
-                Threshold = SuggestionThreshold,
-                Candidates = ranked,
-            };
+                return empty;
+            }
+
+            var suggestions = new Dictionary<string, FaceSuggestionEvidenceV1>(StringComparer.Ordinal);
+            foreach (var probe in probes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var matchResponse = await _sendAsync(
+                        ProfilingEnvelope.Create(
+                            ProfilingMessageType.MatchIdentityCandidates,
+                            new MatchIdentityCandidatesRequest(
+                                space.Canonical,
+                                space.ModelId,
+                                space.ModelVersion,
+                                probe.Embedding ?? [],
+                                SuggestionThreshold,
+                                MaximumSuggestions)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (matchResponse.MessageType != ProfilingMessageType.MatchIdentityCandidatesResult)
+                {
+                    continue;
+                }
+
+                var matched = matchResponse.DeserializePayload<MatchIdentityCandidatesResult>();
+                var ranked = (matched?.Candidates ?? [])
+                    .Where(candidate => candidate.Score >= SuggestionThreshold)
+                    .OrderByDescending(static candidate => candidate.Score)
+                    .ThenBy(static candidate => candidate.IdentityId.ToString("D"), StringComparer.Ordinal)
+                    .Take(MaximumSuggestions)
+                    .Select(candidate => new FaceSuggestionEntryV1
+                    {
+                        IdentityId = candidate.IdentityId,
+                        Similarity = candidate.Score,
+                    })
+                    .ToArray();
+                if (ranked.Length == 0)
+                {
+                    continue;
+                }
+
+                suggestions[probe.DetectionKey] = new FaceSuggestionEvidenceV1
+                {
+                    EmbeddingSpaceKey = space.Canonical,
+                    BankSignature = signature,
+                    Threshold = SuggestionThreshold,
+                    Candidates = ranked,
+                };
+            }
+
+            return suggestions;
+        }
+        finally
+        {
+            if (releaseRequired)
+            {
+                await TryReleaseIdentityIndexAsync(space).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static IReadOnlyList<IReadOnlyList<IdentitySampleData>> CreateIdentityIndexChunks(
+        EmbeddingSpaceKey space,
+        string signature,
+        IReadOnlyList<IdentitySampleData> samples)
+    {
+        const int reserveBytes = 16 * 1024;
+        var maximumPayload =
+            checked((int)ProfilingProtocolVersion.MaximumFramePayloadSize) - reserveBytes;
+
+        var emptyEnvelope = ProfilingEnvelope.Create(
+            ProfilingMessageType.BuildIdentityIndex,
+            new BuildIdentityIndexRequest(
+                space.Canonical,
+                space.ModelId,
+                space.ModelVersion,
+                signature,
+                chunkIndex: 0,
+                isFinalChunk: false,
+                []));
+        var fixedBytes = ProfilingProtocolSerializer.MeasurePayloadSize(emptyEnvelope);
+
+        var chunks = new List<IReadOnlyList<IdentitySampleData>>();
+        var current = new List<IdentitySampleData>();
+        var currentBytes = fixedBytes;
+
+        foreach (var sample in samples)
+        {
+            var sampleBytes = JsonSerializer.SerializeToUtf8Bytes(
+                sample,
+                ProfilingProtocolSerializer.Options).Length + 1;
+
+            if (fixedBytes + sampleBytes > maximumPayload)
+            {
+                throw new ProfilingProtocolException(
+                    $"Identity sample {sample.IdentitySampleId:D} cannot fit in one protocol frame.");
+            }
+
+            if (current.Count > 0 && currentBytes + sampleBytes > maximumPayload)
+            {
+                chunks.Add(current.ToArray());
+                current = [];
+                currentBytes = fixedBytes;
+            }
+
+            current.Add(sample);
+            currentBytes += sampleBytes;
         }
 
-        await _sendAsync(
-                ProfilingEnvelope.Create(
-                    ProfilingMessageType.ReleaseIndex,
-                    new ReleaseIdentityIndexRequest(space.Canonical)),
-                cancellationToken)
-            .ConfigureAwait(false);
+        if (current.Count > 0)
+        {
+            chunks.Add(current.ToArray());
+        }
 
-        return suggestions;
+        return chunks;
+    }
+
+    private async Task TryReleaseIdentityIndexAsync(EmbeddingSpaceKey space)
+    {
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            var response = await _sendAsync(
+                    ProfilingEnvelope.Create(
+                        ProfilingMessageType.ReleaseIndex,
+                        new ReleaseIdentityIndexRequest(space.Canonical)),
+                    cleanup.Token)
+                .ConfigureAwait(false);
+
+            if (response.MessageType != ProfilingMessageType.ReleaseIndex)
+            {
+                throw new ProfilingProtocolException(
+                    $"Expected ReleaseIndex acknowledgement but received {response.MessageType}.");
+            }
+        }
+        catch (Exception exception) when (
+            exception is OperationCanceledException
+            or ProfilingWorkerDisconnectedException
+            or ProfilingWorkerProcessException
+            or ProfilingProtocolException
+            or IOException
+            or ObjectDisposedException)
+        {
+        }
     }
 
     private static Guid DeriveFaceId(Guid assetId, string detectionKey)

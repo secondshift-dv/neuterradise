@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Neuterradise.App.SystemServices.Database;
 
 using Neuterradise.App.SystemServices.Database.Reads;
@@ -8,6 +9,8 @@ namespace Neuterradise.App.Faces;
 
 public sealed class IdentityBankProvider
 {
+    private static readonly ConditionalWeakTable<CatalogDb, CatalogProviderSet> ProvidersByCatalog = new();
+
     private readonly FaceReads _reads;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _loadGate = new(initialCount: 1, maxCount: 1);
@@ -19,8 +22,11 @@ public sealed class IdentityBankProvider
     private long _spaceLoadCount;
 
     public IdentityBankProvider(CatalogDb catalog, TimeProvider? timeProvider = null)
-        : this(catalog.FaceReads, timeProvider)
     {
+        ArgumentNullException.ThrowIfNull(catalog);
+        _reads = catalog.FaceReads;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        ProvidersByCatalog.GetValue(catalog, static _ => new CatalogProviderSet()).Register(this);
     }
 
     public IdentityBankProvider(FaceReads reads, TimeProvider? timeProvider = null)
@@ -28,6 +34,17 @@ public sealed class IdentityBankProvider
         ArgumentNullException.ThrowIfNull(reads);
         _reads = reads;
         _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    internal static void InvalidateCatalogSpace(CatalogDb catalog, EmbeddingSpaceKey space)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        EmbeddingSpaceKey.EnsureValid(space, nameof(space));
+
+        if (ProvidersByCatalog.TryGetValue(catalog, out var providers))
+        {
+            providers.Invalidate(space);
+        }
     }
 
     public long SpaceLoadCount => Interlocked.Read(ref _spaceLoadCount);
@@ -192,6 +209,48 @@ public sealed class IdentityBankProvider
             identities,
             diagnostics,
             _timeProvider.GetUtcNow());
+    }
+
+    private sealed class CatalogProviderSet
+    {
+        private readonly Lock _gate = new();
+        private readonly List<WeakReference<IdentityBankProvider>> _providers = [];
+
+        public void Register(IdentityBankProvider provider)
+        {
+            lock (_gate)
+            {
+                _providers.RemoveAll(static reference => !reference.TryGetTarget(out _));
+                _providers.Add(new WeakReference<IdentityBankProvider>(provider));
+            }
+        }
+
+        public void Invalidate(EmbeddingSpaceKey space)
+        {
+            IdentityBankProvider[] live;
+            lock (_gate)
+            {
+                var providers = new List<IdentityBankProvider>(_providers.Count);
+                for (var index = _providers.Count - 1; index >= 0; index--)
+                {
+                    if (_providers[index].TryGetTarget(out var provider))
+                    {
+                        providers.Add(provider);
+                    }
+                    else
+                    {
+                        _providers.RemoveAt(index);
+                    }
+                }
+
+                live = providers.ToArray();
+            }
+
+            foreach (var provider in live)
+            {
+                provider.InvalidateSpace(space);
+            }
+        }
     }
 }
 

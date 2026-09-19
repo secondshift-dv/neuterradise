@@ -21,16 +21,22 @@ public sealed class ProfilingWorkerProcessHost : IAsyncDisposable
 {
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly InstallPaths _install;
+    private readonly TimeProvider _timeProvider;
 
     private Process? _currentProcess;
     private ProfilingServerTransport? _pipeServer;
     private bool _disposed;
+    private DateTimeOffset? _readySinceUtc;
 
     public const int MaxConsecutiveFailures = 3;
+    public static TimeSpan HealthyStabilityWindow { get; } = TimeSpan.FromMinutes(1);
 
-    public ProfilingWorkerProcessHost(InstallPaths? install = null)
+    public ProfilingWorkerProcessHost(
+        InstallPaths? install = null,
+        TimeProvider? timeProvider = null)
     {
         _install = install ?? InstallPaths.CreateProduction();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public ProfilingWorkerHostState State { get; private set; } = ProfilingWorkerHostState.Stopped;
@@ -233,7 +239,7 @@ public sealed class ProfilingWorkerProcessHost : IAsyncDisposable
 
             ProfilingHello = hello;
             State = ProfilingWorkerHostState.Ready;
-            ConsecutiveFailures = 0;
+            _readySinceUtc = _timeProvider.GetUtcNow();
         }
         catch
         {
@@ -242,6 +248,7 @@ public sealed class ProfilingWorkerProcessHost : IAsyncDisposable
                 throw;
             }
 
+            _readySinceUtc = null;
             ConsecutiveFailures++;
             RestartCount++;
             State = ConsecutiveFailures >= MaxConsecutiveFailures
@@ -297,6 +304,8 @@ public sealed class ProfilingWorkerProcessHost : IAsyncDisposable
 
             await CleanupResourcesUnsafeAsync().ConfigureAwait(false);
             State = ProfilingWorkerHostState.Stopped;
+            _readySinceUtc = null;
+            ConsecutiveFailures = 0;
         }
         finally
         {
@@ -308,6 +317,14 @@ public sealed class ProfilingWorkerProcessHost : IAsyncDisposable
     {
         if (State is ProfilingWorkerHostState.Ready or ProfilingWorkerHostState.Starting)
         {
+            if (State == ProfilingWorkerHostState.Ready
+                && _readySinceUtc is { } readySince
+                && _timeProvider.GetUtcNow() - readySince >= HealthyStabilityWindow)
+            {
+                ConsecutiveFailures = 0;
+            }
+
+            _readySinceUtc = null;
             ConsecutiveFailures++;
             RestartCount++;
             State = ConsecutiveFailures >= MaxConsecutiveFailures

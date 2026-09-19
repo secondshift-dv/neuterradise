@@ -314,7 +314,7 @@ public sealed class FaceWrites
     {
         await using var command = transaction.CreateCommand(
             """
-            SELECT confirmed_identity_id, embedding, embedding_space_key, model_id, model_version
+            SELECT confirmed_identity_id, embedding, embedding_space_key
             FROM face_detections
             WHERE face_id = $faceId AND decision_state = 'CONFIRMED';
             """);
@@ -325,12 +325,14 @@ public sealed class FaceWrites
             || DbGuid.Parse(reader.GetString(0)) != sample.IdentityId
             || reader.IsDBNull(1)
             || !reader.GetFieldValue<byte[]>(1).AsSpan().SequenceEqual(sample.Embedding)
+            || reader.IsDBNull(2)
             || !string.Equals(reader.GetString(2), sample.EmbeddingSpaceKey, StringComparison.Ordinal)
-            || !string.Equals(reader.GetString(3), sample.ModelId, StringComparison.Ordinal)
-            || !string.Equals(reader.GetString(4), sample.ModelVersion, StringComparison.Ordinal))
+            || !EmbeddingSpaceKey.TryParse(sample.EmbeddingSpaceKey, out var embeddingSpace)
+            || !string.Equals(embeddingSpace.ModelId, sample.ModelId, StringComparison.Ordinal)
+            || !string.Equals(embeddingSpace.ModelVersion, sample.ModelVersion, StringComparison.Ordinal))
         {
             throw new CatalogInvariantException(
-                "An Identity sample must exactly match one confirmed FaceDetection provenance record.");
+                "An Identity sample must exactly match one confirmed FaceDetection embedding-space provenance record.");
         }
     }
 
@@ -414,6 +416,14 @@ public sealed class FaceWrites
         ArgumentException.ThrowIfNullOrWhiteSpace(sample.EmbeddingSpaceKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(sample.ModelId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sample.ModelVersion);
+        if (!EmbeddingSpaceKey.TryParse(sample.EmbeddingSpaceKey, out var space)
+            || !string.Equals(space.ModelId, sample.ModelId, StringComparison.Ordinal)
+            || !string.Equals(space.ModelVersion, sample.ModelVersion, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Identity sample model provenance must match its canonical embedding-space key.",
+                nameof(sample));
+        }
     }
 
     private static void ValidateJson(string value, string parameterName)
