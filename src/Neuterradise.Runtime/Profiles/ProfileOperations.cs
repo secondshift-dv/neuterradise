@@ -6,6 +6,7 @@ using Neuterradise.App.Media;
 using Neuterradise.App.SystemServices.Database;
 using Neuterradise.App.SystemServices.Database.Writes;
 using Neuterradise.App.SystemServices.Operations;
+using Neuterradise.App.SystemServices.Jobs;
 using Neuterradise.App.SystemServices.Storage;
 using Neuterradise.App.SystemServices.TimeAndIds;
 
@@ -19,7 +20,6 @@ public sealed class ProfileOperations
     private readonly ProfileWrites _profileWrites;
     private readonly ManagedPathPlanner _pathPlanner;
     private readonly ExplorerLocationProvider _explorerLocations;
-    private readonly ProfileRenameReconciliationEnqueue? _renameReconciliationEnqueue;
     private readonly TimeProvider _timeProvider;
 
     public ProfileOperations(
@@ -37,7 +37,6 @@ public sealed class ProfileOperations
         _profileWrites = new ProfileWrites(catalog, _timeProvider);
         _pathPlanner = pathPlanner ?? new ManagedPathPlanner(_catalog.Paths.Root);
         _explorerLocations = explorerLocations ?? new ExplorerLocationProvider(catalog.Paths);
-        _renameReconciliationEnqueue = renameReconciliationEnqueue;
     }
 
     public async Task<NormalProfileCreationResult> CreateNormalProfileAsync(
@@ -304,6 +303,12 @@ public sealed class ProfileOperations
             await PersistRenamePlanAsync(
                 transaction, request.ProfileId, operationId, targetFolder, assetPlans, now, cancellationToken)
                 .ConfigureAwait(false);
+            await ReconciliationJobAuthority.EnsureProfileRenameJobAsync(
+                transaction,
+                operationId,
+                request.ProfileId,
+                now,
+                cancellationToken).ConfigureAwait(false);
             await AppendActivityAsync(
                 transaction,
                 ActivityEventType.ProfileRenamed,
@@ -330,19 +335,9 @@ public sealed class ProfileOperations
                 "The new name is saved. Folder and file names are being brought in line in the background.");
         }
 
-        if (reconciliation is not null && _renameReconciliationEnqueue is not null)
+        if (reconciliation is not null)
         {
-            try
-            {
-                await _renameReconciliationEnqueue(reconciliation, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                return result with
-                {
-                    UserMessage = "The new name is saved. Folder and file renaming will resume automatically.",
-                };
-            }
+            JobSignals.Raise();
         }
 
         return result;

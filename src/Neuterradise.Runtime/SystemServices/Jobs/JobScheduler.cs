@@ -23,6 +23,7 @@ public sealed class JobScheduler : IAsyncDisposable
     private static readonly TimeSpan _quiescencePollInterval = TimeSpan.FromMilliseconds(20);
 
     private readonly IClock _clock;
+    private readonly CatalogDb _catalog;
     private readonly JobHandlerRegistry _registry;
     private readonly SchedulerReads _reads;
     private readonly JobWrites _writes;
@@ -63,6 +64,7 @@ public sealed class JobScheduler : IAsyncDisposable
         ResourceGovernor? governor = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _clock = clock ?? new SystemClock();
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _laneConfigurations = (laneConfigurations ?? LaneDefaults.CreateDefault())
@@ -181,6 +183,7 @@ public sealed class JobScheduler : IAsyncDisposable
             throw new InvalidOperationException("A JobScheduler can start only once.");
         }
 
+        await ReconciliationJobAuthority.RecoverMissingJobsAsync(_catalog, cancellationToken).ConfigureAwait(false);
         await _writes.ReconcileInterruptedRunningJobsAsync(cancellationToken).ConfigureAwait(false);
 
         if (OnReconciled is { } reconciled)

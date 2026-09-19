@@ -7,6 +7,7 @@ using Neuterradise.App.SystemServices.Database;
 using Neuterradise.App.SystemServices.Database.Writes;
 using Neuterradise.App.SystemServices.Diagnostics;
 using Neuterradise.App.SystemServices.Operations;
+using Neuterradise.App.SystemServices.Jobs;
 using Neuterradise.App.SystemServices.Storage;
 using Neuterradise.App.SystemServices.TimeAndIds;
 
@@ -19,7 +20,6 @@ public sealed class MediaOperations
     private readonly VaultPaths _paths;
     private readonly ManagedPathPlanner _pathPlanner;
     private readonly ExplorerLocationProvider _explorerLocations;
-    private readonly AssetOwnerRelocationEnqueue? _ownerRelocationEnqueue;
     private readonly MediaClipboardWriter _clipboardWriter;
     private readonly TimeProvider _timeProvider;
     private readonly OperationExecution _execution;
@@ -40,7 +40,6 @@ public sealed class MediaOperations
         _timeProvider = timeProvider ?? TimeProvider.System;
         _pathPlanner = pathPlanner ?? new ManagedPathPlanner(_paths.Root);
         _explorerLocations = explorerLocations ?? new ExplorerLocationProvider(catalog.Paths);
-        _ownerRelocationEnqueue = ownerRelocationEnqueue;
         _clipboardWriter = clipboardWriter ?? WriteToSystemClipboard;
         _execution = new OperationExecution(diagnostics, _timeProvider.AsClock());
     }
@@ -286,6 +285,12 @@ public sealed class MediaOperations
                     targetFileName,
                     now,
                     cancellationToken).ConfigureAwait(false);
+                await ReconciliationJobAuthority.EnsureOwnerRelocationJobAsync(
+                    transaction,
+                    operationId.Value,
+                    request.AssetId,
+                    now,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             await EnsureExactlyOneOwnerAsync(transaction, request.AssetId, cancellationToken).ConfigureAwait(false);
@@ -341,19 +346,9 @@ public sealed class MediaOperations
                 "The new owner is saved. The file is being moved into that Profile's folder in the background.");
         }
 
-        if (relocation is not null && _ownerRelocationEnqueue is not null)
+        if (relocation is not null)
         {
-            try
-            {
-                await _ownerRelocationEnqueue(relocation, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                return result with
-                {
-                    UserMessage = "The new owner is saved. Moving the file will resume automatically.",
-                };
-            }
+            JobSignals.Raise();
         }
 
         return result;

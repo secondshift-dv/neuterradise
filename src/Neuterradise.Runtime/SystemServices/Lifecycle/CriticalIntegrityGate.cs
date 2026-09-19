@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Neuterradise.App.SystemServices.Database;
+using Neuterradise.App.Media;
+using Neuterradise.App.Profiles;
 using Neuterradise.App.SystemServices.Diagnostics;
 
 namespace Neuterradise.App.SystemServices.Lifecycle;
@@ -79,13 +81,111 @@ public sealed class CriticalIntegrityGate
 
     private static async Task CheckActiveAppearanceReferencesAsync(SqliteConnection c,List<CriticalIntegrityViolation> v,CancellationToken t)
     {
+        await CheckActiveCoverReferencesAsync(c, v, t).ConfigureAwait(false);
+
         await using var cmd=c.CreateCommand(); cmd.CommandText="""
-            SELECT p.profile_id FROM profiles p LEFT JOIN assets a ON p.cover_asset_id=a.asset_id WHERE p.trashed_at_ms IS NULL AND p.cover_asset_id IS NOT NULL AND (a.asset_id IS NULL OR a.state!='ACTIVE' OR a.trashed_at_ms IS NOT NULL OR a.media_type!='IMAGE')
-            UNION ALL SELECT p.profile_id FROM profiles p LEFT JOIN assets a ON p.banner_asset_id=a.asset_id WHERE p.trashed_at_ms IS NULL AND p.banner_asset_id IS NOT NULL AND (a.asset_id IS NULL OR a.state!='ACTIVE' OR a.trashed_at_ms IS NOT NULL OR a.media_type NOT IN ('IMAGE','VIDEO'))
+            SELECT p.profile_id FROM profiles p LEFT JOIN assets a ON p.banner_asset_id=a.asset_id WHERE p.trashed_at_ms IS NULL AND p.banner_asset_id IS NOT NULL AND (a.asset_id IS NULL OR a.state!='ACTIVE' OR a.trashed_at_ms IS NOT NULL OR a.media_type NOT IN ('IMAGE','VIDEO'))
             UNION ALL SELECT p.profile_id FROM profiles p WHERE p.kind='UNKNOWN' AND p.trashed_at_ms IS NULL AND (p.cover_asset_id IS NOT NULL OR p.banner_asset_id IS NOT NULL);
             """;
-        await using var r=await cmd.ExecuteReaderAsync(t).ConfigureAwait(false); while(await r.ReadAsync(t).ConfigureAwait(false)) v.Add(new("INVALID_ACTIVE_APPEARANCE_REFERENCE","An active Profile has an invalid appearance reference.","Profile",r.GetString(0)));
+        await using var r=await cmd.ExecuteReaderAsync(t).ConfigureAwait(false);
+        while(await r.ReadAsync(t).ConfigureAwait(false))
+            v.Add(new("INVALID_ACTIVE_APPEARANCE_REFERENCE","An active Profile has an invalid appearance reference.","Profile",r.GetString(0)));
     }
+
+    private static async Task CheckActiveCoverReferencesAsync(
+        SqliteConnection c,
+        List<CriticalIntegrityViolation> v,
+        CancellationToken t)
+    {
+        await using var cmd = c.CreateCommand();
+        cmd.CommandText = """
+            SELECT
+                p.profile_id,
+                a.asset_id,
+                a.state,
+                a.trashed_at_ms,
+                a.media_type,
+                pa.overrides_json
+            FROM profiles p
+            LEFT JOIN assets a ON p.cover_asset_id = a.asset_id
+            LEFT JOIN profile_appearance pa ON p.profile_id = pa.profile_id
+            WHERE p.trashed_at_ms IS NULL
+              AND p.cover_asset_id IS NOT NULL;
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync(t).ConfigureAwait(false);
+        while (await reader.ReadAsync(t).ConfigureAwait(false))
+        {
+            var profileId = reader.GetString(0);
+            var validAsset = !reader.IsDBNull(1)
+                && string.Equals(reader.GetString(2), "ACTIVE", StringComparison.Ordinal)
+                && reader.IsDBNull(3)
+                && !reader.IsDBNull(4);
+            if (!validAsset)
+            {
+                AddInvalidAppearanceViolation(v, profileId);
+                continue;
+            }
+
+            MediaType mediaType;
+            try
+            {
+                mediaType = DbEnum.ParseMediaType(reader.GetString(4));
+            }
+            catch (FormatException)
+            {
+                AddInvalidAppearanceViolation(v, profileId);
+                continue;
+            }
+
+            ProfileAppearanceOverrides overrides;
+            try
+            {
+                overrides = reader.IsDBNull(5)
+                    ? ProfileAppearanceOverrides.Default
+                    : ProfileAppearanceOverrides.Parse(reader.GetString(5));
+            }
+            catch (Exception exception) when (exception is FormatException or ArgumentException or System.Text.Json.JsonException)
+            {
+                AddInvalidAppearanceViolation(v, profileId);
+                continue;
+            }
+
+            CoverVisualSourceKind sourceKind;
+            if (string.IsNullOrWhiteSpace(overrides.CoverSourceKind))
+            {
+                // Legacy image Covers are unambiguous. A video Cover is not: its exact frame
+                // timestamp is durable authority and therefore may never be inferred.
+                if (mediaType != MediaType.Image)
+                {
+                    AddInvalidAppearanceViolation(v, profileId);
+                    continue;
+                }
+
+                sourceKind = CoverVisualSourceKind.Image;
+            }
+            else if (!Enum.TryParse(overrides.CoverSourceKind, ignoreCase: false, out sourceKind))
+            {
+                AddInvalidAppearanceViolation(v, profileId);
+                continue;
+            }
+
+            if (!ProfileAppearanceRules.IsCoverVisualSourceValid(
+                    mediaType,
+                    sourceKind,
+                    overrides.CoverVideoTimestampMilliseconds))
+            {
+                AddInvalidAppearanceViolation(v, profileId);
+            }
+        }
+    }
+
+    private static void AddInvalidAppearanceViolation(List<CriticalIntegrityViolation> violations, string profileId) =>
+        violations.Add(new(
+            "INVALID_ACTIVE_APPEARANCE_REFERENCE",
+            "An active Profile has an invalid appearance reference.",
+            "Profile",
+            profileId));
 }
 
 public sealed record CriticalIntegrityViolation(string Code,string Message,string? TargetEntity=null,string? TargetId=null);
