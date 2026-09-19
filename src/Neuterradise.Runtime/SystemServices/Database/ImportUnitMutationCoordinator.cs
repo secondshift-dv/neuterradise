@@ -4,16 +4,16 @@ namespace Neuterradise.App.SystemServices.Database;
 
 /// <summary>
 /// Process-local serialization authority for all mutation actors that can advance, cancel,
-/// publish, recover, or roll back one ImportUnit. The lease is re-entrant across the current
-/// async flow so layered authorities can share the same unit boundary without deadlocking.
+/// publish, recover, or roll back one ImportUnit. The scope is established synchronously before
+/// an asynchronous gate wait so nested authorities remain re-entrant even after contention.
 /// </summary>
 public sealed class ImportUnitMutationCoordinator : IDisposable
 {
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
-    private readonly AsyncLocal<HashSet<Guid>?> _owned = new();
+    private readonly AsyncLocal<FlowScope?> _flow = new();
     private int _disposed;
 
-    public async ValueTask<Lease> EnterAsync(Guid unitId, CancellationToken cancellationToken = default)
+    public ValueTask<Lease> EnterAsync(Guid unitId, CancellationToken cancellationToken = default)
     {
         if (unitId == Guid.Empty)
         {
@@ -22,37 +22,102 @@ public sealed class ImportUnitMutationCoordinator : IDisposable
 
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-        var inherited = _owned.Value;
-        if (inherited?.Contains(unitId) == true)
+        var scope = _flow.Value;
+        if (scope is not null
+            && scope.Depths.TryGetValue(unitId, out var depth)
+            && depth > 0)
         {
-            return Lease.Nested;
+            scope.Depths[unitId] = checked(depth + 1);
+            return ValueTask.FromResult(new Lease(this, unitId, gate: null, scope, ownsGate: false));
         }
+
+        scope ??= new FlowScope();
+        _flow.Value = scope;
+
+        if (scope.Depths.ContainsKey(unitId))
+        {
+            throw new InvalidOperationException(
+                $"ImportUnit {unitId:D} already has a pending mutation acquisition in this async flow.");
+        }
+
+        // The pending marker is installed synchronously in the caller's ExecutionContext before
+        // any await can yield. AwaitGateAsync mutates this shared holder after contention resolves.
+        scope.Depths.Add(unitId, 0);
 
         var gate = _gates.GetOrAdd(unitId, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        if (Volatile.Read(ref _disposed) != 0)
+        var wait = gate.WaitAsync(cancellationToken);
+        if (wait.IsCompletedSuccessfully)
         {
-            gate.Release();
-            throw new ObjectDisposedException(nameof(ImportUnitMutationCoordinator));
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                scope.Depths.Remove(unitId);
+                gate.Release();
+                throw new ObjectDisposedException(nameof(ImportUnitMutationCoordinator));
+            }
+
+            scope.Depths[unitId] = 1;
+            return ValueTask.FromResult(new Lease(this, unitId, gate, scope, ownsGate: true));
         }
 
-        var next = inherited is null ? new HashSet<Guid>() : new HashSet<Guid>(inherited);
-        next.Add(unitId);
-        _owned.Value = next;
-        return new Lease(this, unitId, gate, inherited);
+        return AwaitGateAsync(unitId, gate, scope, wait);
     }
 
-    private void Exit(Guid unitId, SemaphoreSlim gate, HashSet<Guid>? inherited)
+    private async ValueTask<Lease> AwaitGateAsync(
+        Guid unitId,
+        SemaphoreSlim gate,
+        FlowScope scope,
+        Task wait)
     {
-        var current = _owned.Value;
-        if (current is null || !current.Contains(unitId))
+        try
+        {
+            await wait.ConfigureAwait(false);
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                gate.Release();
+                throw new ObjectDisposedException(nameof(ImportUnitMutationCoordinator));
+            }
+
+            scope.Depths[unitId] = 1;
+            return new Lease(this, unitId, gate, scope, ownsGate: true);
+        }
+        catch
+        {
+            scope.Depths.Remove(unitId);
+            throw;
+        }
+    }
+
+    private void Exit(Guid unitId, SemaphoreSlim? gate, FlowScope scope, bool ownsGate)
+    {
+        if (!scope.Depths.TryGetValue(unitId, out var depth) || depth <= 0)
         {
             throw new InvalidOperationException("ImportUnit mutation lease ownership was lost before release.");
         }
 
-        _owned.Value = inherited;
-        gate.Release();
+        if (ownsGate && depth != 1)
+        {
+            throw new InvalidOperationException(
+                "The outer ImportUnit mutation lease was released before its nested mutation leases.");
+        }
+
+        depth--;
+        if (depth == 0)
+        {
+            scope.Depths.Remove(unitId);
+            if (ownsGate)
+            {
+                gate!.Release();
+            }
+        }
+        else
+        {
+            scope.Depths[unitId] = depth;
+        }
+
+        if (scope.Depths.Count == 0 && ReferenceEquals(_flow.Value, scope))
+        {
+            _flow.Value = null;
+        }
     }
 
     public void Dispose()
@@ -68,37 +133,40 @@ public sealed class ImportUnitMutationCoordinator : IDisposable
         }
 
         _gates.Clear();
-        _owned.Value = null;
+        _flow.Value = null;
+    }
+
+    private sealed class FlowScope
+    {
+        public Dictionary<Guid, int> Depths { get; } = [];
     }
 
     public sealed class Lease : IDisposable, IAsyncDisposable
     {
-        internal static Lease Nested { get; } = new();
-
         private ImportUnitMutationCoordinator? _owner;
         private readonly Guid _unitId;
         private readonly SemaphoreSlim? _gate;
-        private readonly HashSet<Guid>? _inherited;
+        private readonly FlowScope _scope;
+        private readonly bool _ownsGate;
 
-        private Lease()
-        {
-        }
-
-        internal Lease(ImportUnitMutationCoordinator owner, Guid unitId, SemaphoreSlim gate, HashSet<Guid>? inherited)
+        internal Lease(
+            ImportUnitMutationCoordinator owner,
+            Guid unitId,
+            SemaphoreSlim? gate,
+            FlowScope scope,
+            bool ownsGate)
         {
             _owner = owner;
             _unitId = unitId;
             _gate = gate;
-            _inherited = inherited;
+            _scope = scope;
+            _ownsGate = ownsGate;
         }
 
         public void Dispose()
         {
             var owner = Interlocked.Exchange(ref _owner, null);
-            if (owner is not null)
-            {
-                owner.Exit(_unitId, _gate!, _inherited);
-            }
+            owner?.Exit(_unitId, _gate, _scope, _ownsGate);
         }
 
         public ValueTask DisposeAsync()
