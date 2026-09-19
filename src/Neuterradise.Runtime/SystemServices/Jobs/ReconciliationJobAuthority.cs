@@ -173,6 +173,6 @@ public static class ReconciliationJobAuthority
         command.Parameters.AddWithValue("$createdAtMs", createdAtMs);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
-            throw new CatalogInvariantException("A reconciliation obligation must create exactly one durable job.");
+            throw new InvalidOperationException("A reconciliation obligation must create exactly one durable job.");
     }
 }

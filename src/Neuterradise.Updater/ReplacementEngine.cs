@@ -53,7 +53,11 @@ public sealed class ReplacementEngine
 
             handoff = JsonSerializer.Deserialize<HandoffData>(handoffBytes, JsonOptions)
                 ?? throw new InvalidOperationException("Handoff data is empty.");
-            var actualManifestSha256 = ComputeManifestAuthoritySha256(handoff.Manifest);
+            var parsedManifestError = ValidateManifestAuthority(handoff.Manifest);
+            if (parsedManifestError is not null)
+                return ReplacementResult.Failed(parsedManifestError);
+
+            var actualManifestSha256 = ComputeManifestAuthoritySha256(handoff.Manifest!);
             if (!string.Equals(actualManifestSha256, expectedManifestSha256, StringComparison.Ordinal))
                 return ReplacementResult.Failed("Handoff manifest authority changed after approval.");
         }
@@ -66,10 +70,6 @@ public sealed class ReplacementEngine
             return ReplacementResult.Failed("Handoff operation id is invalid.");
         if (string.IsNullOrWhiteSpace(handoff.VaultRoot))
             return ReplacementResult.Failed("Handoff is missing the protected VaultRoot authority.");
-        var manifestError = ValidateManifestAuthority(handoff.Manifest);
-        if (manifestError is not null)
-            return ReplacementResult.Failed(manifestError);
-
         string installRoot;
         string payloadPath;
         string appStateRoot;
@@ -302,7 +302,7 @@ public sealed class ReplacementEngine
                 file.Sha256,
                 file.Role)));
 
-    private static string? ValidateManifestAuthority(HandoffManifestData manifest)
+    private static string? ValidateManifestAuthority(HandoffManifestData? manifest)
     {
         if (manifest is null)
             return "Handoff manifest is missing.";
