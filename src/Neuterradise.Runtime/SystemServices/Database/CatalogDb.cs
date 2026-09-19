@@ -28,6 +28,7 @@ public sealed class CatalogDb
         Paths = paths;
         ConnectionFactory = new CatalogConnectionFactory(paths);
         WriteCoordinator = new CatalogWriteCoordinator();
+        MutationAdmission = new CatalogMutationAdmissionGate();
         ImportUnitMutations = new ImportUnitMutationCoordinator();
         _schemaMigrator = new SchemaMigrator(ConnectionFactory, WriteCoordinator, _timeProvider);
     }
@@ -37,6 +38,8 @@ public sealed class CatalogDb
     public CatalogConnectionFactory ConnectionFactory { get; }
 
     public CatalogWriteCoordinator WriteCoordinator { get; }
+
+    public CatalogMutationAdmissionGate MutationAdmission { get; }
 
     public ImportUnitMutationCoordinator ImportUnitMutations { get; }
 

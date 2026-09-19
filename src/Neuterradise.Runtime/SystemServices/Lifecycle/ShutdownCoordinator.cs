@@ -53,12 +53,18 @@ public sealed class ShutdownCoordinator
     private async Task<ShutdownReport> ShutdownCoreAsync(TimeSpan budget, CancellationToken cancellationToken)
     {
         TransitionTo(StartupState.ShuttingDown);
+
+        // X54: command admission closes synchronously at the first shutdown transition. Internal
+        // scheduler/recovery writes remain available; only new user mutation commands are refused.
+        _context.Catalog.MutationAdmission.Close();
+
         var stopwatch = Stopwatch.StartNew();
         var failures = new List<string>();
         SchedulerShutdownReport? schedulerReport = null;
         var timedOut = false;
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         bounded.CancelAfter(budget);
+
         try
         {
             try
@@ -70,18 +76,41 @@ public sealed class ShutdownCoordinator
                 failures.Add("COMMAND_QUIESCE_FAILED:" + e.GetType().Name);
             }
 
+            try
+            {
+                await _context.Catalog.MutationAdmission.WaitForIdleAsync(bounded.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (bounded.IsCancellationRequested)
+            {
+                timedOut = true;
+                failures.Add("COMMAND_DRAIN_TIMEOUT");
+                // Safety beats latency: do not release VaultLock while an admitted command can mutate.
+                await _context.Catalog.MutationAdmission.WaitForIdleAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+
             if (_shutdownSchedulerAsync is not null)
             {
+                Task<SchedulerShutdownReport>? schedulerTask = null;
                 try
                 {
-                    schedulerReport = await _shutdownSchedulerAsync(Remaining(budget, stopwatch.Elapsed), bounded.Token)
-                        .WaitAsync(bounded.Token)
-                        .ConfigureAwait(false);
+                    schedulerTask = _shutdownSchedulerAsync(Remaining(budget, stopwatch.Elapsed), bounded.Token);
+                    schedulerReport = await schedulerTask.WaitAsync(bounded.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (bounded.IsCancellationRequested)
                 {
                     timedOut = true;
                     failures.Add("SCHEDULER_SHUTDOWN_TIMEOUT");
+                    if (schedulerTask is not null)
+                    {
+                        try
+                        {
+                            schedulerReport = await schedulerTask.ConfigureAwait(false);
+                        }
+                        catch (Exception e)
+                        {
+                            failures.Add("SCHEDULER_SHUTDOWN_FAILED:" + e.GetType().Name);
+                        }
+                    }
                 }
                 catch (Exception e)
                 {
@@ -91,14 +120,35 @@ public sealed class ShutdownCoordinator
 
             foreach (var service in _services)
             {
+                Task disposalTask;
                 try
                 {
-                    await service.DisposeAsync().AsTask().WaitAsync(bounded.Token).ConfigureAwait(false);
+                    disposalTask = service.DisposeAsync().AsTask();
+                }
+                catch (Exception e)
+                {
+                    failures.Add("SERVICE_DISPOSAL_FAILED:" + e.GetType().Name);
+                    continue;
+                }
+
+                try
+                {
+                    await disposalTask.WaitAsync(bounded.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (bounded.IsCancellationRequested)
                 {
                     timedOut = true;
                     failures.Add("SERVICE_DISPOSAL_TIMEOUT");
+                    try
+                    {
+                        // X22: a timeout stops waiting for the advertised budget, not ownership.
+                        // Keep VaultLock until the mutation-capable disposal task actually terminates.
+                        await disposalTask.ConfigureAwait(false);
+                    }
+                    catch (Exception e)
+                    {
+                        failures.Add("SERVICE_DISPOSAL_FAILED:" + e.GetType().Name);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -117,6 +167,8 @@ public sealed class ShutdownCoordinator
         }
         finally
         {
+            // VaultLock ownership is deliberately last. Every admitted command, scheduler shutdown
+            // task, and mutation-capable service disposal has terminated before this point.
             await _context.DisposeAsync().ConfigureAwait(false);
             stopwatch.Stop();
             TransitionTo(StartupState.Stopped);
