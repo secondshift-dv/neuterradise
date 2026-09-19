@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Neuterradise.Release.Contracts;
 using Neuterradise.App.SystemServices.Storage;
 
 namespace Neuterradise.App.SystemServices.Updates;
@@ -9,6 +10,7 @@ public sealed record UpdateRecoveryPlan(
     string StagingRoot,
     string BackupRoot,
     string PayloadRoot,
+    string ManifestAuthoritySha256,
     string Step,
     DateTimeOffset UpdatedAtUtc)
 {
@@ -20,6 +22,8 @@ public sealed record UpdateRecoveryPlan(
             throw new FormatException("Update operation id is invalid.");
         if (string.IsNullOrWhiteSpace(Step))
             throw new FormatException("Update recovery step is missing.");
+        if (!UpdateManifestAuthority.IsLowerSha256(ManifestAuthoritySha256))
+            throw new FormatException("Update recovery manifest authority digest is invalid.");
 
         install.EnsureDisjointFrom(appState, vaultRoot);
 

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
+using Neuterradise.Release.Contracts;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,6 +16,8 @@ public sealed class ReplacementEngine
 
     public static async Task<ReplacementResult> ExecuteAsync(
         string handoffPath,
+        string expectedHandoffSha256,
+        string expectedManifestSha256,
         int? parentPid,
         bool launchApp,
         CancellationToken cancellationToken = default)
@@ -36,9 +40,22 @@ public sealed class ReplacementEngine
         HandoffData handoff;
         try
         {
-            var json = await File.ReadAllTextAsync(normalizedHandoffPath, cancellationToken);
-            handoff = JsonSerializer.Deserialize<HandoffData>(json, JsonOptions)
+            if (!UpdateManifestAuthority.IsLowerSha256(expectedHandoffSha256)
+                || !UpdateManifestAuthority.IsLowerSha256(expectedManifestSha256))
+            {
+                return ReplacementResult.Failed("Updater authority digest format is invalid.");
+            }
+
+            var handoffBytes = await File.ReadAllBytesAsync(normalizedHandoffPath, cancellationToken);
+            var actualHandoffSha256 = Convert.ToHexString(SHA256.HashData(handoffBytes)).ToLowerInvariant();
+            if (!string.Equals(actualHandoffSha256, expectedHandoffSha256, StringComparison.Ordinal))
+                return ReplacementResult.Failed("Handoff bytes changed after approval.");
+
+            handoff = JsonSerializer.Deserialize<HandoffData>(handoffBytes, JsonOptions)
                 ?? throw new InvalidOperationException("Handoff data is empty.");
+            var actualManifestSha256 = ComputeManifestAuthoritySha256(handoff.Manifest);
+            if (!string.Equals(actualManifestSha256, expectedManifestSha256, StringComparison.Ordinal))
+                return ReplacementResult.Failed("Handoff manifest authority changed after approval.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
@@ -49,6 +66,9 @@ public sealed class ReplacementEngine
             return ReplacementResult.Failed("Handoff operation id is invalid.");
         if (string.IsNullOrWhiteSpace(handoff.VaultRoot))
             return ReplacementResult.Failed("Handoff is missing the protected VaultRoot authority.");
+        var manifestError = ValidateManifestAuthority(handoff.Manifest);
+        if (manifestError is not null)
+            return ReplacementResult.Failed(manifestError);
 
         string installRoot;
         string payloadPath;
@@ -124,6 +144,7 @@ public sealed class ReplacementEngine
                     stagingRoot,
                     backupRoot,
                     payloadPath,
+                    expectedManifestSha256,
                     "AbortedParentStillRunning",
                     cancellationToken);
                 return ReplacementResult.Failed($"Parent process (PID {parentPid.Value}) did not exit within {MaxWaitParentExitSeconds} seconds. Aborting replacement without mutating files.");
@@ -138,6 +159,13 @@ public sealed class ReplacementEngine
                 Directory.Delete(stagingRoot, recursive: true);
 
             CopyDirectory(payloadPath, stagingRoot);
+            var stagedValidationError = ValidateStagedPayload(stagingRoot, handoff.Manifest);
+            if (stagedValidationError is not null)
+            {
+                Directory.Delete(stagingRoot, recursive: true);
+                return ReplacementResult.Failed(stagedValidationError);
+            }
+
             await PersistRecoveryStepAsync(
                 recoveryPlanPath,
                 handoff.OperationId,
@@ -145,11 +173,19 @@ public sealed class ReplacementEngine
                 stagingRoot,
                 backupRoot,
                 payloadPath,
+                expectedManifestSha256,
                 "StagingPrepared",
                 cancellationToken);
 
             if (Directory.Exists(backupRoot))
                 Directory.Delete(backupRoot, recursive: true);
+
+            stagedValidationError = ValidateStagedPayload(stagingRoot, handoff.Manifest);
+            if (stagedValidationError is not null)
+            {
+                Directory.Delete(stagingRoot, recursive: true);
+                return ReplacementResult.Failed(stagedValidationError);
+            }
 
             Directory.Move(installRoot, backupRoot);
             installMovedToBackup = true;
@@ -160,6 +196,7 @@ public sealed class ReplacementEngine
                 stagingRoot,
                 backupRoot,
                 payloadPath,
+                expectedManifestSha256,
                 "InstallMovedToBackup",
                 CancellationToken.None);
 
@@ -173,6 +210,7 @@ public sealed class ReplacementEngine
                     stagingRoot,
                     backupRoot,
                     payloadPath,
+                    expectedManifestSha256,
                     "ReplacementCompleted",
                     CancellationToken.None);
             }
@@ -190,6 +228,7 @@ public sealed class ReplacementEngine
                             stagingRoot,
                             backupRoot,
                             payloadPath,
+                            expectedManifestSha256,
                             "RestoredFromBackup",
                             CancellationToken.None);
                     }
@@ -203,6 +242,7 @@ public sealed class ReplacementEngine
                         stagingRoot,
                         backupRoot,
                         payloadPath,
+                        expectedManifestSha256,
                         "RestoreFailed",
                         CancellationToken.None);
                     return ReplacementResult.Failed($"Replacement failed and restoration also failed: {moveEx.Message} | Restore error: {restoreEx.Message}");
@@ -240,10 +280,218 @@ public sealed class ReplacementEngine
                 stagingRoot,
                 backupRoot,
                 payloadPath,
+                expectedManifestSha256,
                 "ReplacementFailed",
                 installMovedToBackup ? CancellationToken.None : cancellationToken);
             return ReplacementResult.Failed(ex.Message);
         }
+    }
+
+    private static string ComputeManifestAuthoritySha256(HandoffManifestData manifest) =>
+        UpdateManifestAuthority.ComputeSha256(
+            manifest.SchemaVersion,
+            manifest.ProductId,
+            manifest.ProductVersion,
+            manifest.RuntimeIdentifier,
+            manifest.PayloadByteLength,
+            manifest.PayloadSha256,
+            manifest.MinimumCompatibleVersion,
+            manifest.Files.Select(file => new ManifestAuthorityFile(
+                file.RelativePath,
+                file.ByteLength,
+                file.Sha256,
+                file.Role)));
+
+    private static string? ValidateManifestAuthority(HandoffManifestData manifest)
+    {
+        if (manifest is null)
+            return "Handoff manifest is missing.";
+        if (manifest.SchemaVersion != 1)
+            return "Handoff manifest schema is unsupported.";
+        if (!UpdateManifestAuthority.IsLowerSha256(manifest.PayloadSha256)
+            || manifest.PayloadByteLength < 0
+            || string.IsNullOrWhiteSpace(manifest.ProductVersion)
+            || manifest.Files is null
+            || manifest.Files.Count > 100_000)
+        {
+            return "Handoff manifest identity is invalid.";
+        }
+
+        ReleaseContractDocument contract;
+        try
+        {
+            contract = ReleaseContract.Current;
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or ArgumentException)
+        {
+            return $"Release contract is invalid: {ex.Message}";
+        }
+
+        if (!string.Equals(manifest.ProductId, contract.ProductId, StringComparison.Ordinal)
+            || !string.Equals(manifest.RuntimeIdentifier, contract.RuntimeIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Handoff manifest contradicts the canonical release identity.";
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in manifest.Files)
+        {
+            string relative;
+            try
+            {
+                relative = ReleaseContract.NormalizeRelativePath(file.RelativePath);
+            }
+            catch (Exception ex) when (ex is FormatException or ArgumentException)
+            {
+                return "Handoff manifest contains an unsafe file path.";
+            }
+
+            if (!seen.Add(relative)
+                || file.ByteLength < 0
+                || !UpdateManifestAuthority.IsLowerSha256(file.Sha256)
+                || string.Equals(relative, "release-manifest.json", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Handoff manifest file identity is invalid.";
+            }
+        }
+
+        foreach (var required in contract.RequiredMembers)
+        {
+            if (!seen.Contains(required))
+                return $"Handoff manifest is missing required release member '{required}'.";
+        }
+
+        foreach (var requiredFileName in contract.RequiredUniqueFileNames)
+        {
+            if (seen.Count(path => string.Equals(Path.GetFileName(path), requiredFileName, StringComparison.OrdinalIgnoreCase)) != 1)
+                return $"Handoff manifest must contain exactly one runtime member named '{requiredFileName}'.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateStagedPayload(string root, HandoffManifestData manifest)
+    {
+        var authorityError = ValidateManifestAuthority(manifest);
+        if (authorityError is not null)
+            return authorityError;
+
+        try
+        {
+            if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0)
+                return "Replacement staging root cannot be a reparse point.";
+
+            var approved = manifest.Files.ToDictionary(
+                file => ReleaseContract.NormalizeRelativePath(file.RelativePath),
+                file => file,
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var pair in approved)
+            {
+                var path = ResolveContainedFile(root, pair.Key);
+                if (!File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                    return $"Replacement staging is missing approved file '{pair.Key}'.";
+
+                var info = new FileInfo(path);
+                if (info.Length != pair.Value.ByteLength
+                    || !string.Equals(ComputeSha256(path), pair.Value.Sha256, StringComparison.Ordinal))
+                {
+                    return $"Replacement staging file '{pair.Key}' changed after approval.";
+                }
+            }
+
+            var actual = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pending = new Queue<string>();
+            pending.Enqueue(root);
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue();
+                foreach (var directory in Directory.EnumerateDirectories(current))
+                {
+                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                        return "Replacement staging contains a reparse-point directory.";
+                    pending.Enqueue(directory);
+                }
+
+                foreach (var file in Directory.EnumerateFiles(current))
+                {
+                    if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+                        return "Replacement staging contains a reparse-point file.";
+                    actual.Add(ReleaseContract.NormalizeRelativePath(Path.GetRelativePath(root, file)));
+                }
+            }
+
+            var expected = new HashSet<string>(approved.Keys, StringComparer.OrdinalIgnoreCase)
+            {
+                "release-manifest.json"
+            };
+            if (!actual.SetEquals(expected))
+                return "Replacement staging membership changed after approval.";
+
+            var controlPath = ResolveContainedFile(root, "release-manifest.json");
+            if (new FileInfo(controlPath).Length > 2 * 1024 * 1024)
+                return "Replacement control manifest exceeds safe limit.";
+            var control = JsonSerializer.Deserialize<EmbeddedReleaseManifestData>(
+                File.ReadAllBytes(controlPath),
+                JsonOptions);
+            if (control is null
+                || control.SchemaVersion != manifest.SchemaVersion
+                || !string.Equals(control.ProductId, manifest.ProductId, StringComparison.Ordinal)
+                || !string.Equals(control.ProductVersion, manifest.ProductVersion, StringComparison.Ordinal)
+                || !string.Equals(control.RuntimeIdentifier, manifest.RuntimeIdentifier, StringComparison.OrdinalIgnoreCase)
+                || control.Files is null
+                || control.Files.Count != manifest.Files.Count)
+            {
+                return "Replacement control manifest contradicts approved update authority.";
+            }
+
+            var controlByPath = control.Files.ToDictionary(
+                file => ReleaseContract.NormalizeRelativePath(file.RelativePath),
+                file => file,
+                StringComparer.OrdinalIgnoreCase);
+            if (controlByPath.Count != approved.Count)
+                return "Replacement control manifest contains duplicate or missing membership.";
+
+            foreach (var pair in approved)
+            {
+                if (!controlByPath.TryGetValue(pair.Key, out var controlFile)
+                    || controlFile.ByteLength != pair.Value.ByteLength
+                    || !string.Equals(controlFile.Sha256, pair.Value.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"Replacement control manifest contradicts '{pair.Key}'.";
+                }
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or FormatException)
+        {
+            return $"Replacement staging validation failed safely: {ex.Message}";
+        }
+    }
+
+    private static string ResolveContainedFile(string root, string relativePath)
+    {
+        var canonicalRoot = TrimRoot(Path.GetFullPath(root));
+        var normalized = ReleaseContract.NormalizeRelativePath(relativePath);
+        var candidate = Path.GetFullPath(Path.Combine(
+            canonicalRoot,
+            normalized.Replace('/', Path.DirectorySeparatorChar)));
+        if (!IsWithinOrEqual(canonicalRoot, candidate) || SamePath(canonicalRoot, candidate))
+            throw new IOException("Replacement file path escaped staging authority.");
+        return candidate;
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            1024 * 1024,
+            FileOptions.SequentialScan);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     private static async Task<bool> WaitForProcessExitAsync(int pid, TimeSpan timeout, CancellationToken cancellationToken)
@@ -305,6 +553,7 @@ public sealed class ReplacementEngine
         string stagingRoot,
         string backupRoot,
         string payloadRoot,
+        string manifestAuthoritySha256,
         string step,
         CancellationToken cancellationToken)
     {
@@ -317,6 +566,7 @@ public sealed class ReplacementEngine
                 stagingRoot,
                 backupRoot,
                 payloadRoot,
+                manifestAuthoritySha256,
                 step,
                 updatedAtUtc = DateTimeOffset.UtcNow
             };
@@ -374,4 +624,28 @@ internal sealed record HandoffData(
     Guid OperationId,
     string SourcePayloadPath,
     string DestinationInstallRoot,
+    HandoffManifestData Manifest,
     string? VaultRoot);
+
+internal sealed record HandoffManifestData(
+    int SchemaVersion,
+    string ProductId,
+    string ProductVersion,
+    string RuntimeIdentifier,
+    long PayloadByteLength,
+    string PayloadSha256,
+    string? MinimumCompatibleVersion,
+    IReadOnlyList<HandoffManifestFile> Files);
+
+internal sealed record HandoffManifestFile(
+    string RelativePath,
+    long ByteLength,
+    string Sha256,
+    string? Role);
+
+internal sealed record EmbeddedReleaseManifestData(
+    int SchemaVersion,
+    string ProductId,
+    string ProductVersion,
+    string RuntimeIdentifier,
+    IReadOnlyList<HandoffManifestFile> Files);

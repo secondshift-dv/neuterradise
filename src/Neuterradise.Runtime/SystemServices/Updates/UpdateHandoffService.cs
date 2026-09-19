@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Neuterradise.App.SystemServices.Storage;
 
@@ -109,7 +111,10 @@ public sealed class UpdateHandoffService
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = true
             });
-        await File.WriteAllTextAsync(handoffPath, json, cancellationToken).ConfigureAwait(false);
+        var handoffBytes = Encoding.UTF8.GetBytes(json);
+        var handoffSha256 = Convert.ToHexString(SHA256.HashData(handoffBytes)).ToLowerInvariant();
+        var manifestAuthoritySha256 = normalizedHandoff.Manifest.ComputeAuthoritySha256();
+        await File.WriteAllBytesAsync(handoffPath, handoffBytes, cancellationToken).ConfigureAwait(false);
 
         await _stateStore.PublishHandoffPendingAsync(handoff.OperationId, cancellationToken).ConfigureAwait(false);
 
@@ -121,6 +126,10 @@ public sealed class UpdateHandoffService
         };
         start.ArgumentList.Add("--handoff");
         start.ArgumentList.Add(handoffPath);
+        start.ArgumentList.Add("--handoff-sha256");
+        start.ArgumentList.Add(handoffSha256);
+        start.ArgumentList.Add("--manifest-sha256");
+        start.ArgumentList.Add(manifestAuthoritySha256);
         start.ArgumentList.Add("--parent-pid");
         start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 

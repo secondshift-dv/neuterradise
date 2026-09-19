@@ -86,7 +86,7 @@ public sealed class UpdateStartupRecovery
         }
 
         if (plan.Step == "ReplacementCompleted")
-            return await VerifyInstalledReplacementAsync(state.OperationId, paths, cancellationToken).ConfigureAwait(false);
+            return await VerifyInstalledReplacementAsync(state.OperationId, paths, plan.ManifestAuthoritySha256, cancellationToken).ConfigureAwait(false);
 
         if (plan.Step is "InstallMovedToBackup" or "RestoreFailed" or "ReplacementFailed"
             || plan.Step.StartsWith("Failed:", StringComparison.Ordinal))
@@ -106,7 +106,7 @@ public sealed class UpdateStartupRecovery
             }
 
             if (Directory.Exists(_install.Root) && Directory.Exists(paths.BackupRoot))
-                return await VerifyInstalledReplacementAsync(state.OperationId, paths, cancellationToken).ConfigureAwait(false);
+                return await VerifyInstalledReplacementAsync(state.OperationId, paths, plan.ManifestAuthoritySha256, cancellationToken).ConfigureAwait(false);
 
             if (Directory.Exists(_install.Root) && !Directory.Exists(paths.BackupRoot) && plan.Step == "ReplacementFailed")
             {
@@ -123,6 +123,7 @@ public sealed class UpdateStartupRecovery
     private async Task<UpdateStartupRecoveryResult> VerifyInstalledReplacementAsync(
         Guid operationId,
         ReplacementPaths paths,
+        string manifestAuthoritySha256,
         CancellationToken cancellationToken)
     {
         UpdateHandoff? handoff;
@@ -137,6 +138,18 @@ public sealed class UpdateStartupRecovery
 
         if (handoff is null)
             return await BlockAsync(operationId, Directory.Exists(paths.BackupRoot) ? paths.BackupRoot : null, "Installed replacement has no valid handoff evidence.", cancellationToken).ConfigureAwait(false);
+
+        if (!string.Equals(
+                handoff.Manifest.ComputeAuthoritySha256(),
+                manifestAuthoritySha256,
+                StringComparison.Ordinal))
+        {
+            return await BlockAsync(
+                operationId,
+                Directory.Exists(paths.BackupRoot) ? paths.BackupRoot : null,
+                "Installed replacement manifest authority does not match its recovery journal.",
+                cancellationToken).ConfigureAwait(false);
+        }
 
         var expectedPayload = Path.TrimEndingDirectorySeparator(Path.GetFullPath(paths.PayloadRoot));
         var actualPayload = Path.TrimEndingDirectorySeparator(Path.GetFullPath(handoff.SourcePayloadPath));

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Neuterradise.App.SystemServices;
+using Neuterradise.Release.Contracts;
 
 namespace Neuterradise.App.SystemServices.Updates;
 
@@ -28,6 +29,21 @@ public sealed record UpdateManifest(
         value.Validate();
         return value;
     }
+
+    public string ComputeAuthoritySha256() =>
+        UpdateManifestAuthority.ComputeSha256(
+            SchemaVersion,
+            ProductId,
+            ProductVersion,
+            RuntimeIdentifier,
+            PayloadByteLength,
+            PayloadSha256,
+            MinimumCompatibleVersion,
+            Files.Select(file => new ManifestAuthorityFile(
+                file.RelativePath,
+                file.ByteLength,
+                file.Sha256,
+                file.Role)));
 
     public void Validate()
     {

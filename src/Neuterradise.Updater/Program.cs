@@ -12,6 +12,8 @@ public static class Program
     {
         string? handoffPath = null;
         int? parentPid = null;
+        string? handoffSha256 = null;
+        string? manifestSha256 = null;
         bool launchApp = true;
 
         for (int i = 0; i < args.Length; i++)
@@ -19,6 +21,14 @@ public static class Program
             if (string.Equals(args[i], "--handoff", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
             {
                 handoffPath = args[++i];
+            }
+            else if (string.Equals(args[i], "--handoff-sha256", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                handoffSha256 = args[++i];
+            }
+            else if (string.Equals(args[i], "--manifest-sha256", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                manifestSha256 = args[++i];
             }
             else if (string.Equals(args[i], "--parent-pid", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
             {
@@ -33,9 +43,12 @@ public static class Program
             }
         }
 
-        if (string.IsNullOrWhiteSpace(handoffPath) || !File.Exists(handoffPath))
+        if (string.IsNullOrWhiteSpace(handoffPath)
+            || !File.Exists(handoffPath)
+            || string.IsNullOrWhiteSpace(handoffSha256)
+            || string.IsNullOrWhiteSpace(manifestSha256))
         {
-            Console.Error.WriteLine("Error: Valid --handoff path is required.");
+            Console.Error.WriteLine("Error: Valid --handoff, --handoff-sha256, and --manifest-sha256 authorities are required.");
             return 1;
         }
 
@@ -48,7 +61,7 @@ public static class Program
 
         try
         {
-            var result = await ReplacementEngine.ExecuteAsync(handoffPath, parentPid, launchApp, cts.Token);
+            var result = await ReplacementEngine.ExecuteAsync(handoffPath, handoffSha256, manifestSha256, parentPid, launchApp, cts.Token);
             if (!result.Success)
             {
                 Console.Error.WriteLine($"Updater failed: {result.Error}");
