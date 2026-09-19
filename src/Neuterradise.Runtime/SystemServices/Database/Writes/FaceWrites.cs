@@ -5,6 +5,7 @@ namespace Neuterradise.App.SystemServices.Database.Writes;
 
 public sealed class FaceWrites
 {
+    private readonly CatalogDb _catalog;
     private readonly CatalogConnectionFactory _connectionFactory;
     private readonly CatalogWriteCoordinator _writeCoordinator;
     private readonly TimeProvider _timeProvider;
@@ -12,6 +13,7 @@ public sealed class FaceWrites
     public FaceWrites(CatalogDb catalog, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _connectionFactory = catalog.ConnectionFactory;
         _writeCoordinator = catalog.WriteCoordinator;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -162,6 +164,9 @@ public sealed class FaceWrites
         await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        IdentityBankProvider.InvalidateCatalogSpace(
+            _catalog,
+            EmbeddingSpaceKey.Parse(sample.EmbeddingSpaceKey));
         return sample.IdentitySampleId;
     }
 
