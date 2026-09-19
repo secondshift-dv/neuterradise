@@ -29,12 +29,26 @@ END;
 
 CREATE TRIGGER trg_profile_hero_update_blocks_active_asset_trash
 BEFORE UPDATE OF cover_asset_id, banner_asset_id ON profiles
-WHEN EXISTS (
-    SELECT 1 FROM trash_entries te
-    WHERE te.entity_type = 'ASSET'
-      AND te.entity_id IN (NEW.cover_asset_id, NEW.banner_asset_id)
-      AND te.state IN ('PENDING','EXECUTING')
-)
+WHEN (
+        NEW.cover_asset_id IS NOT OLD.cover_asset_id
+        AND NEW.cover_asset_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1 FROM trash_entries te
+            WHERE te.entity_type = 'ASSET'
+              AND te.entity_id = NEW.cover_asset_id
+              AND te.state IN ('PENDING','EXECUTING')
+        )
+     )
+  OR (
+        NEW.banner_asset_id IS NOT OLD.banner_asset_id
+        AND NEW.banner_asset_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1 FROM trash_entries te
+            WHERE te.entity_type = 'ASSET'
+              AND te.entity_id = NEW.banner_asset_id
+              AND te.state IN ('PENDING','EXECUTING')
+        )
+     )
 BEGIN
     SELECT RAISE(ABORT, 'an asset with active Trash reservation cannot acquire Hero references');
 END;
