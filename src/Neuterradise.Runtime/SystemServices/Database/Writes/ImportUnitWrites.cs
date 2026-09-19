@@ -547,6 +547,93 @@ public sealed class ImportUnitWrites
         }
     }
 
+    internal async Task<bool> TryReserveCancellationAssetRollbackAsync(
+        Guid unitId,
+        Guid assetId,
+        CancellationToken cancellationToken = default)
+    {
+        if (unitId == Guid.Empty || assetId == Guid.Empty)
+        {
+            return false;
+        }
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection);
+
+        await using (var existing = transaction.CreateCommand(
+            """
+            SELECT 1
+            FROM import_cancel_asset_reservations
+            WHERE import_unit_id = $unitId
+              AND asset_id = $assetId;
+            """))
+        {
+            existing.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            existing.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+            if (await existing.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+        }
+
+        await using var reserve = transaction.CreateCommand(
+            """
+            INSERT INTO import_cancel_asset_reservations(
+                import_unit_id, asset_id, created_at_ms)
+            SELECT $unitId, $assetId, $now
+            WHERE EXISTS (
+                SELECT 1
+                FROM import_units self
+                JOIN import_items mine ON mine.import_unit_id = self.import_unit_id
+                JOIN assets asset ON asset.asset_id = mine.candidate_asset_id
+                WHERE self.import_unit_id = $unitId
+                  AND self.state = 'CANCELLED'
+                  AND mine.candidate_asset_id = $assetId
+                  AND asset.state = 'ACTIVE'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM import_items other
+                      JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                      WHERE other.import_unit_id <> $unitId
+                        AND (other.candidate_asset_id = $assetId OR other.reused_asset_id = $assetId)
+                        AND consumer.state NOT IN (
+                            'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                            'CANCELLED','FAILED_TERMINAL'
+                        )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM import_asset_interests interest
+                      JOIN import_units consumer ON consumer.import_unit_id = interest.import_unit_id
+                      WHERE interest.import_unit_id <> $unitId
+                        AND interest.asset_id = $assetId
+                        AND consumer.state NOT IN (
+                            'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                            'CANCELLED','FAILED_TERMINAL'
+                        )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM profile_assets relation
+                      WHERE relation.asset_id = $assetId
+                        AND (
+                            relation.publication_import_unit_id IS NULL
+                            OR relation.publication_import_unit_id <> $unitId
+                        )
+                  )
+            );
+            """);
+        reserve.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+        reserve.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+        reserve.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
+        var reserved = await reserve.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return reserved;
+    }
+
     /// <summary>Marks a cancelled import's rollback as fully settled.</summary>
     internal async Task MarkRollbackSettledAsync(Guid unitId, CancellationToken cancellationToken = default)
     {
@@ -604,6 +691,13 @@ public sealed class ImportUnitWrites
                 "$backgroundPriority",
                 JobPriorityPolicy.DefaultPriority);
             await reprioritize.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var releaseReservation = transaction.CreateCommand(
+            "DELETE FROM import_cancel_asset_reservations WHERE import_unit_id = $unitId;"))
+        {
+            releaseReservation.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
+            await releaseReservation.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using (var release = transaction.CreateCommand(

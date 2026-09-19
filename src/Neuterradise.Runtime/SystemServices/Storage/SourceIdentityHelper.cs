@@ -57,7 +57,7 @@ public static class SourceIdentityHelper
             var opened = CreateFileW(
                 fullPath,
                 GenericRead | DeleteAccess,
-                FileShareRead | FileShareWrite | FileShareDelete,
+                FileShareRead | FileShareDelete,
                 IntPtr.Zero,
                 OpenExisting,
                 FileAttributeNormal,

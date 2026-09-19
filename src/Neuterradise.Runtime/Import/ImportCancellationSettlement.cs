@@ -107,6 +107,18 @@ internal sealed class ImportCancellationSettlement
             // that are still ACTIVE, so already-completed Trash transitions are naturally skipped.
             foreach (var assetId in await ReadExclusiveActiveAssetIdsAsync(unitId, cancellationToken).ConfigureAwait(false))
             {
+                var reserved = await _unitWrites.TryReserveCancellationAssetRollbackAsync(
+                        unitId,
+                        assetId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!reserved)
+                {
+                    // Another live import or durable published relation won the race. This Asset is
+                    // preserved; cancellation only removes this unit's unpublished delta.
+                    continue;
+                }
+
                 var plan = await _trashCoordinator.PrepareAssetTrashAsync(assetId, cancellationToken)
                     .ConfigureAwait(false);
                 if (!plan.IsSuccess || plan.Value is null)
