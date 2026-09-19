@@ -132,6 +132,110 @@ public sealed class ManagedPathPlanner
         return new ManagedModelPackagePlan(assetId, packageDirectory, primary, Path.GetFileName(primaryRelativeComponentPath));
     }
 
+    /// <summary>
+    /// Selects a deterministic Profile path without trusting a short GUID suffix to be globally unique.
+    /// Existing filesystem material or catalog authority is supplied by the caller as a collision predicate.
+    /// </summary>
+    public ManagedPathPlan AllocateProfilePlan(
+        Guid profileId,
+        string displayLabel,
+        ProfileStorageToken profileStorageToken,
+        Func<ManagedPathPlan, bool> conflicts)
+    {
+        ArgumentNullException.ThrowIfNull(conflicts);
+        foreach (var profileLength in AllowedSuffixLengths)
+        {
+            var candidate = PlanProfile(profileId, displayLabel, profileStorageToken, profileLength);
+            if (!conflicts(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new ManagedPathPlanningException(
+            PathConflictCode,
+            "All deterministic Profile ID suffixes conflict with another entity or unknown bytes.");
+    }
+
+    /// <summary>
+    /// Plans a package beneath an already-authoritative Profile folder. Package planning must not
+    /// independently recompute the Profile folder suffix because that can diverge after collision escalation.
+    /// </summary>
+    public ManagedModelPackagePlan PlanModelPackageInProfileFolder(
+        string profileFolderRelativePath,
+        string displayLabel,
+        Guid assetId,
+        AssetStorageToken assetStorageToken,
+        string primaryRelativeComponentPath,
+        int assetIdSuffixLength = 8)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileFolderRelativePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(primaryRelativeComponentPath);
+        EnsureNonEmpty(assetId, nameof(assetId));
+        Validate(assetStorageToken);
+        ValidateSuffixLength(assetIdSuffixLength);
+        EnsureSafeComponentPath(primaryRelativeComponentPath);
+
+        var normalizedProfileFolder = NormalizeComponentPath(profileFolderRelativePath);
+        if (!normalizedProfileFolder.StartsWith("profiles/", StringComparison.OrdinalIgnoreCase)
+            || normalizedProfileFolder.Split('/').Any(segment => segment is ".." or "."))
+        {
+            throw new ManagedPathPlanningException(
+                PathConflictCode,
+                "The persisted Profile folder is not a canonical profiles-relative path.");
+        }
+
+        var suffix = $"__model__{IdSuffix(assetId, assetIdSuffixLength)}";
+        var normalizedPrimary = NormalizeComponentPath(primaryRelativeComponentPath);
+        var safeName = FitHumanSegment(
+            _namePolicy.ToSafeProfileName(displayLabel),
+            suffix + "/" + normalizedPrimary,
+            normalizedProfileFolder,
+            "Media",
+            "Models");
+        var packageDirectory = CombineRelative(
+            normalizedProfileFolder,
+            "Media",
+            "Models",
+            safeName + suffix);
+        var primary = CombineRelative(packageDirectory, normalizedPrimary);
+        EnsureWithinBudget(primary);
+        return new ManagedModelPackagePlan(
+            assetId,
+            packageDirectory,
+            primary,
+            Path.GetFileName(primaryRelativeComponentPath));
+    }
+
+    public ManagedModelPackagePlan AllocateModelPackagePlan(
+        string profileFolderRelativePath,
+        string displayLabel,
+        Guid assetId,
+        AssetStorageToken assetStorageToken,
+        string primaryRelativeComponentPath,
+        Func<ManagedModelPackagePlan, bool> conflicts)
+    {
+        ArgumentNullException.ThrowIfNull(conflicts);
+        foreach (var assetLength in AllowedSuffixLengths)
+        {
+            var candidate = PlanModelPackageInProfileFolder(
+                profileFolderRelativePath,
+                displayLabel,
+                assetId,
+                assetStorageToken,
+                primaryRelativeComponentPath,
+                assetLength);
+            if (!conflicts(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new ManagedPathPlanningException(
+            PathConflictCode,
+            "All deterministic model-package ID suffixes conflict with another entity or unknown bytes.");
+    }
+
     /// <summary>Plans a derived Hero materialization keyed by authoritative AssetId and appearance bytes.</summary>
     public ManagedHeroPathPlan PlanHero(
         Guid profileId,

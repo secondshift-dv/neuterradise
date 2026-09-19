@@ -211,19 +211,13 @@ public static class ModelPackageDiscovery
         }
 
         var discoveredDeps = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (format == ModelPackageFormat.Gltf)
+        var dependencyDiscoveryComplete = format switch
         {
-            DiscoverGltfDependencies(fullPath, discoveredDeps);
-        }
-        else if (format == ModelPackageFormat.Obj)
-        {
-            DiscoverObjDependencies(fullPath, packageDir, discoveredDeps);
-        }
-        else if (format == ModelPackageFormat.Dae)
-        {
-            DiscoverDaeDependencies(fullPath, discoveredDeps);
-        }
+            ModelPackageFormat.Gltf => DiscoverGltfDependencies(fullPath, discoveredDeps),
+            ModelPackageFormat.Obj => DiscoverObjDependencies(fullPath, packageDir, discoveredDeps),
+            ModelPackageFormat.Dae => DiscoverDaeDependencies(fullPath, discoveredDeps),
+            _ => false,
+        };
 
         var components = new List<DiscoveredComponent> { primaryComp };
         var hasMissing = false;
@@ -259,11 +253,13 @@ public static class ModelPackageDiscovery
             }
         }
 
-        var status = components.Count == 1
-            ? AssetDependencyStatus.SelfContained
-            : hasMissing
-                ? AssetDependencyStatus.DependenciesMissing
-                : AssetDependencyStatus.Complete;
+        var status = !dependencyDiscoveryComplete
+            ? AssetDependencyStatus.DependenciesUnknown
+            : components.Count == 1
+                ? AssetDependencyStatus.SelfContained
+                : hasMissing
+                    ? AssetDependencyStatus.DependenciesMissing
+                    : AssetDependencyStatus.Complete;
 
         var bundleSha = status is AssetDependencyStatus.Complete or AssetDependencyStatus.SelfContained
             ? ModelPackagePlan.HashBundle(components)
@@ -272,8 +268,9 @@ public static class ModelPackageDiscovery
         return new ModelPackageDiscoveryResult(format, status, bundleSha, components);
     }
 
-    private static void DiscoverGltfDependencies(string gltfPath, Dictionary<string, string> deps)
+    private static bool DiscoverGltfDependencies(string gltfPath, Dictionary<string, string> deps)
     {
+        var complete = true;
         try
         {
             using var stream = File.OpenRead(gltfPath);
@@ -284,9 +281,10 @@ public static class ModelPackageDiscovery
             {
                 foreach (var b in buffers.EnumerateArray())
                 {
-                    if (b.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String)
+                    if (b.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String
+                        && !AddSafeUri(uriProp.GetString(), unescape: true, deps))
                     {
-                        AddSafeUri(uriProp.GetString(), unescape: true, deps);
+                        complete = false;
                     }
                 }
             }
@@ -295,27 +293,39 @@ public static class ModelPackageDiscovery
             {
                 foreach (var img in images.EnumerateArray())
                 {
-                    if (img.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String)
+                    if (img.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String
+                        && !AddSafeUri(uriProp.GetString(), unescape: true, deps))
                     {
-                        AddSafeUri(uriProp.GetString(), unescape: true, deps);
+                        complete = false;
                     }
                 }
             }
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
         {
+            return false;
         }
+
+        return complete;
     }
 
-    private static void DiscoverObjDependencies(string objPath, string packageDir, Dictionary<string, string> deps)
+    private static bool DiscoverObjDependencies(
+        string objPath,
+        string packageDir,
+        Dictionary<string, string> deps)
     {
+        var complete = true;
         try
         {
             var mtlFiles = new List<string>();
             foreach (var line in File.ReadLines(objPath))
             {
                 var trimmed = line.Trim();
-                if (trimmed.Length == 0 || trimmed.StartsWith("#")) continue;
+                if (trimmed.Length == 0 || trimmed.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
                 if (tokens.Length >= 2 && string.Equals(tokens[0], "mtllib", StringComparison.OrdinalIgnoreCase))
                 {
@@ -326,6 +336,10 @@ public static class ModelPackageDiscovery
                         {
                             mtlFiles.Add(mtlName);
                         }
+                        else
+                        {
+                            complete = false;
+                        }
                     }
                 }
             }
@@ -333,63 +347,101 @@ public static class ModelPackageDiscovery
             foreach (var mtlName in mtlFiles)
             {
                 var mtlFullPath = Path.Combine(packageDir, mtlName.Replace('/', Path.DirectorySeparatorChar));
-                if (!File.Exists(mtlFullPath)) continue;
+                if (!File.Exists(mtlFullPath))
+                {
+                    continue;
+                }
 
                 foreach (var mtlLine in File.ReadLines(mtlFullPath))
                 {
                     var trimmed = mtlLine.Trim();
-                    if (trimmed.Length == 0 || trimmed.StartsWith("#")) continue;
-                    var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-                    if (tokens.Length >= 2)
+                    if (trimmed.Length == 0 || trimmed.StartsWith("#", StringComparison.Ordinal))
                     {
-                        var directive = tokens[0].ToLowerInvariant();
-                        if (directive is "map_kd" or "map_bump" or "bump" or "map_d" or "map_ks" or "map_ka" or "map_ns" or "disp" or "decal")
+                        continue;
+                    }
+
+                    var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                    if (tokens.Length < 2)
+                    {
+                        continue;
+                    }
+
+                    var directive = tokens[0].ToLowerInvariant();
+                    if (directive is "map_kd" or "map_bump" or "bump" or "map_d" or "map_ks" or "map_ka" or "map_ns" or "disp" or "decal")
+                    {
+                        if (!AddSafeUri(tokens[^1], unescape: false, deps))
                         {
-                            var texFile = tokens[^1];
-                            AddSafeUri(texFile, unescape: false, deps);
+                            complete = false;
                         }
                     }
                 }
             }
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            return false;
         }
+
+        return complete;
     }
 
-    private static void DiscoverDaeDependencies(string daePath, Dictionary<string, string> deps)
+    private static bool DiscoverDaeDependencies(string daePath, Dictionary<string, string> deps)
     {
+        var complete = true;
         try
         {
             var text = File.ReadAllText(daePath);
             var regex = new Regex(@"<init_from>\s*(.*?)\s*</init_from>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             foreach (Match match in regex.Matches(text))
             {
-                var val = match.Groups[1].Value.Trim();
-                if (!string.IsNullOrEmpty(val))
+                var value = match.Groups[1].Value.Trim();
+                if (!string.IsNullOrEmpty(value) && !AddSafeUri(value, unescape: true, deps))
                 {
-                    AddSafeUri(val, unescape: true, deps);
+                    complete = false;
                 }
             }
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            return false;
         }
+
+        return complete;
     }
 
     private static bool AddSafeUri(string? uri, bool unescape, Dictionary<string, string> deps)
     {
-        if (string.IsNullOrWhiteSpace(uri)
-            || uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
-            || uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return false;
+        }
+
+        // Embedded data is genuinely self-contained and therefore does not create a package file.
+        if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Remote, rooted, traversal, malformed or otherwise unmanaged dependencies make package
+        // completeness unknown. They must never disappear from the dependency decision merely
+        // because the application refuses to copy them.
+        if (uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var candidate = unescape ? Uri.UnescapeDataString(uri) : uri;
-        candidate = candidate.Trim().Replace('\\', '/');
+        string candidate;
+        try
+        {
+            candidate = unescape ? Uri.UnescapeDataString(uri) : uri;
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
 
+        candidate = candidate.Trim().Replace('\\', '/');
         if (Path.IsPathRooted(candidate)
             || candidate.Contains(':')
             || candidate.Split('/').Any(segment => segment is ".." or "."))
