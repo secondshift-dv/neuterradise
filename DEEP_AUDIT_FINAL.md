@@ -826,6 +826,19 @@ Automated restart matrix for Profile Trash and Profile Restore.
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
 
+
+### R3 corrective revalidation record — 2026-09-19
+
+**Corrective source SHA:** `d6063d8392bfbe522747f92a43767a71566b8cf6` (corrective chain: `5648fccbcaa8953e0601b2d9c17511c4321d14ef` → `d6063d8392bfbe522747f92a43767a71566b8cf6`)  
+**Review defect corrected:** Profile Restore and Profile Purge could previously overlap because Restore retained `IN_TRASH` while a restore checkpoint was active; post-DB manifest refresh also was not a durable recovery phase; Restore replay did not validate the destination manifest identity.  
+**Root-cause correction:** Profile Restore is now an explicit durable state machine: `IN_TRASH → RESTORE_EXECUTING → RESTORE_FINALIZING → RESTORED`. Physical restore requires verified recovery/destination manifest evidence, catalog authority commits only from `RESTORE_EXECUTING`, manifest regeneration occurs while `RESTORE_FINALIZING`, and only successful manifest convergence writes terminal `RESTORED`. Startup `TrashRecovery` scans and resumes both restore states. Legacy R3 entries that already contain a Restore checkpoint while still `IN_TRASH` are upgraded into `RESTORE_EXECUTING` before replay.  
+**Mutual exclusion:** migration `0015_r3_restore_purge_exclusion.sql` and the Restore-side active-Purge check make Profile Restore/Purge mutually exclusive. A stale Purge preparation that loses the race returns a typed conflict instead of surfacing a raw SQLite constraint error.  
+**Manifest replay guard:** `ManagedMoveExecutor.ExecuteProfileManifestRestoreMoveAsync` now validates ProfileId on the destination manifest; true source+destination absence is NeedsAttention and cannot silently advance catalog authority.  
+**Verification result:** static source/state-machine/recovery trace completed. Executable crash injection and restart matrix remain R8 evidence.  
+**Source status:** SOURCE-CLOSED after corrective revalidation  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** only R8 executable evidence remains.
+
 ---
 
 # 8. Stage 4 — Import / Media / Vault / Storage Findings
@@ -1885,6 +1898,18 @@ Purge cannot delete recovery material and then fail on a previously omitted FK.
 **Source status:** SOURCE-CLOSED  
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
+
+
+### R3 corrective revalidation record — 2026-09-19
+
+**Corrective source SHA:** `d6063d8392bfbe522747f92a43767a71566b8cf6`  
+**Review defect corrected:** assignment-cluster FK blocking was integrity-safe but its domain policy was implicit, making terminal assignment history look like an accidental permanent Purge dead-end.  
+**Lifecycle policy:** `candidate_profile_id` and `decided_profile_id` remain fail-closed dependencies. PENDING candidate evidence must be resolved/recomputed before Purge. ACCEPTED `decided_profile_id` is durable historical decision authority and is never nulled implicitly by Purge. Terminal ACCEPTED/KEPT_UNKNOWN candidate evidence is likewise retained unless a separate assignment-domain operation explicitly changes it. Purge now reports these cases distinctly rather than folding them into an opaque aggregate blocker.  
+**Irreversible-delete guard:** Profile Purge still requires zero assignment references before physical deletion, and migration `0015_r3_restore_purge_exclusion.sql` additionally prevents Purge from starting/advancing while Profile Restore owns the same recovery material.  
+**Verification result:** static dependency/policy/TOCTOU trace completed. FK-on runtime matrix remains R8 evidence.  
+**Source status:** SOURCE-CLOSED after corrective revalidation  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** only R8 executable evidence remains.
 
 ---
 
@@ -3588,7 +3613,7 @@ Acceptance:
 
 ## Phase R3 — Fix Trash/Profile lifecycle
 
-**Implementation status — 2026-09-19:** SOURCE-CLOSED through `0e0aa2bc2c4218146f3a548bc1175904efe68220`. Source implementation landed in `c82ab6997dbdd9155bff41acdfcad3b5a465eae4`, was corrected for Profile OWNER move-away and assignment-cluster purge authority in `0b8d6e1ef14152107db1e21c7c4aecd12d548454`, and received the concurrent-Hero guard correction in `0e0aa2bc2c4218146f3a548bc1175904efe68220`. X06, X07, X08, and X37 are SOURCE-CLOSED. Runtime/fault-injection acceptance remains R8 and is not implied by this source closure.
+**Implementation status — 2026-09-19:** SOURCE-CLOSED after corrective revalidation through `d6063d8392bfbe522747f92a43767a71566b8cf6`. Initial R3 source landed in `c82ab6997dbdd9155bff41acdfcad3b5a465eae4` → `0b8d6e1ef14152107db1e21c7c4aecd12d548454` → `0e0aa2bc2c4218146f3a548bc1175904efe68220`. Review then found remaining Restore/Purge mutual-exclusion, post-DB manifest recovery, manifest-identity replay, legacy checkpoint, and X37 policy gaps. Corrective source landed in `5648fccbcaa8953e0601b2d9c17511c4321d14ef` → `d6063d8392bfbe522747f92a43767a71566b8cf6`. X06, X07, X08, and X37 are SOURCE-CLOSED on the corrective source. Runtime/fault-injection acceptance remains R8 and is not implied by this source closure.
 
 Target:
 
