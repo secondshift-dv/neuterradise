@@ -777,6 +777,18 @@ DB trigger remains enabled. Tests must pass with the real invariant, not by disa
 **Runtime status:** NOT-YET-VERIFIED  
 **Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
 
+
+### R3 corrective revalidation record — 2026-09-19
+
+**Corrective source SHA:** `d6063d8392bfbe522747f92a43767a71566b8cf6` (corrective chain: `5648fccbcaa8953e0601b2d9c17511c4321d14ef` → `d6063d8392bfbe522747f92a43767a71566b8cf6`)  
+**Why X07 is affected by the corrective pass:** X07 requires an exact paired Profile Restore lifecycle, not only a valid Trash marker. The initial R3 closure fixed relation/identity shutdown and symmetric reconstruction, but the subsequent review found that Profile Restore still shared `IN_TRASH` authority with Purge, had no durable post-DB manifest-finalization phase, and did not validate restored manifest identity on replay. Those defects could invalidate the paired lifecycle even though the Trash-side invariant closure itself was correct.  
+**Corrective lifecycle:** Profile Restore now owns explicit durable phases `RESTORE_EXECUTING → RESTORE_FINALIZING → RESTORED`. Restore cannot start while a Profile Purge authorization is active, and migration `0015_r3_restore_purge_exclusion.sql` prevents Profile Purge from starting or advancing while Restore owns the same Profile recovery material. Catalog relation/identity reconstruction commits only under `RESTORE_EXECUTING`; manifest regeneration completes under `RESTORE_FINALIZING`; terminal `RESTORED` is written only after manifest convergence.  
+**Replay/legacy guard:** destination `profile.json` is validated against the expected ProfileId during replay; true source+destination absence is NeedsAttention rather than false success. Legacy R3 entries that already persisted a Restore checkpoint while still `IN_TRASH` are promoted into the corrective restore state machine before replay.  
+**Verification result:** static Profile authority/restore-state/migration trace completed. DB-trigger/FK and crash/restart executable evidence remains R8.  
+**Source status:** SOURCE-CLOSED after corrective revalidation  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** only R8 executable trigger/FK and crash/restart evidence remains.
+
 ---
 
 ## X08 — Profile Trash/Restore is not restart-convergent
