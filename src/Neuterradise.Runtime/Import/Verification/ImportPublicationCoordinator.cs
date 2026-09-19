@@ -45,6 +45,9 @@ public sealed class ImportPublicationCoordinator
             return ImportPublicationResult.Blocked("UNIT_NOT_FOUND", "That import no longer exists.");
         }
 
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var model = await _verification.LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false);
@@ -90,6 +93,9 @@ public sealed class ImportPublicationCoordinator
         Guid unitId,
         CancellationToken cancellationToken = default)
     {
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         var model = await _verification.LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false);
         if (model is null)
         {
@@ -141,6 +147,8 @@ public sealed class ImportPublicationCoordinator
             await _catalog.ImportWrites.UpdateUnitStateAsync(
                 unitId,
                 ImportUnitState.Committing,
+                expectedState: ImportUnitState.ReadyForVerification,
+                expectedRowVersion: model.RowVersion,
                 cancellationToken).ConfigureAwait(false);
         }
 

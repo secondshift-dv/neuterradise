@@ -78,6 +78,9 @@ public sealed class ImportRecovery
 
         foreach (var unit in units)
         {
+            await using var mutationLease = await _catalog.ImportUnitMutations
+                .EnterAsync(unit.UnitId, cancellationToken).ConfigureAwait(false);
+
             if (unit.CommitOperationId is not null)
             {
                 // A PREPARING unit remains recoverable even when an older build already advanced

@@ -75,6 +75,9 @@ public sealed class ImportCommitCoordinator
             throw new ArgumentException("A stable ImportUnitId cannot be empty.", nameof(unitId));
         }
 
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         var importWrites = _catalog.ImportWrites;
         var importReads = new ImportReads(_catalog);
 
@@ -157,6 +160,9 @@ public sealed class ImportCommitCoordinator
         long? expectedUnitRowVersion = null,
         CancellationToken cancellationToken = default)
     {
+        await using var mutationLease = await _catalog.ImportUnitMutations
+            .EnterAsync(unitId, cancellationToken).ConfigureAwait(false);
+
         // Stage 1: canonical materialization (no Verify readiness gate).
         var stage1 = await MaterializeStage1Async(unitId, expectedUnitRowVersion, cancellationToken).ConfigureAwait(false);
         if (!stage1.LibraryCommitted)
