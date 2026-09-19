@@ -25,7 +25,7 @@ public static class ReleaseContract
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
         var normalized = value.Replace('\\', '/').Trim();
         if (Path.IsPathRooted(normalized)
-            || normalized.StartsWith('/', StringComparison.Ordinal)
+            || normalized.StartsWith("/", StringComparison.Ordinal)
             || normalized.Contains(':', StringComparison.Ordinal)
             || normalized.Contains('\0'))
         {

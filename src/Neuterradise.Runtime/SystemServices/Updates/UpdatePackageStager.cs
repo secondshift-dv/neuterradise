@@ -165,7 +165,7 @@ public sealed class UpdatePackageStager
     {
         if (string.IsNullOrWhiteSpace(normalizedEntryName)
             || Path.IsPathRooted(normalizedEntryName)
-            || normalizedEntryName.StartsWith('/', StringComparison.Ordinal)
+            || normalizedEntryName.StartsWith("/", StringComparison.Ordinal)
             || normalizedEntryName.Contains(':', StringComparison.Ordinal)
             || normalizedEntryName.Contains('\0'))
         {

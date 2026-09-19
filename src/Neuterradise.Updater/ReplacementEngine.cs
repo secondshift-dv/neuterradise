@@ -389,6 +389,7 @@ public sealed class ReplacementEngine
             foreach (var pair in approved)
             {
                 var path = ResolveContainedFile(root, pair.Key);
+                EnsureNoReparseAncestors(root, path);
                 if (!File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
                     return $"Replacement staging is missing approved file '{pair.Key}'.";
 
@@ -480,6 +481,27 @@ public sealed class ReplacementEngine
         if (!IsWithinOrEqual(canonicalRoot, candidate) || SamePath(canonicalRoot, candidate))
             throw new IOException("Replacement file path escaped staging authority.");
         return candidate;
+    }
+
+    private static void EnsureNoReparseAncestors(string root, string filePath)
+    {
+        var canonicalRoot = TrimRoot(Path.GetFullPath(root));
+        var current = Path.GetDirectoryName(Path.GetFullPath(filePath))
+            ?? throw new IOException("Replacement file has no parent directory.");
+
+        while (!SamePath(current, canonicalRoot))
+        {
+            if (!IsWithinOrEqual(canonicalRoot, current))
+                throw new IOException("Replacement file parent escaped staging authority.");
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Replacement staging contains a reparse-point ancestor.");
+
+            current = Path.GetDirectoryName(current)
+                ?? throw new IOException("Replacement staging ancestry is incomplete.");
+        }
+
+        if ((File.GetAttributes(canonicalRoot) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("Replacement staging root cannot be a reparse point.");
     }
 
     private static string ComputeSha256(string path)

@@ -178,6 +178,9 @@ function Invoke-Download {
     elseif ([string]::Equals($Uri, $FfmpegArchiveUrl, [StringComparison]::Ordinal)) {
         'FFmpeg-archive'
     }
+    elseif ([string]::Equals($Uri, $FfmpegMirrorUrl, [StringComparison]::Ordinal)) {
+        'FFmpeg-project-mirror'
+    }
     elseif ([string]::Equals($Uri, $YuNetLicenseUrl, [StringComparison]::Ordinal)) {
         'YuNet-license'
     }
@@ -214,6 +217,9 @@ function Invoke-Download {
     elseif ([string]::Equals(
         $Uri,
         $FfmpegArchiveUrl,
+        [StringComparison]::Ordinal) -or [string]::Equals(
+        $Uri,
+        $FfmpegMirrorUrl,
         [StringComparison]::Ordinal)) {
 
         $FfmpegArchiveSha256
