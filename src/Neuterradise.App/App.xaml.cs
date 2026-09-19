@@ -645,6 +645,36 @@ public partial class App : Application
 
         try
         {
+            if (_context is not null)
+            {
+                var remainingForCommandDrain = absoluteDeadlineUtc - DateTimeOffset.UtcNow;
+                if (remainingForCommandDrain > TimeSpan.Zero)
+                {
+                    using var commandDrain = new CancellationTokenSource(remainingForCommandDrain);
+                    try
+                    {
+                        await _context.Catalog.MutationAdmission
+                            .WaitForIdleAsync(commandDrain.Token)
+                            .ConfigureAwait(true);
+                    }
+                    catch (OperationCanceledException) when (commandDrain.IsCancellationRequested)
+                    {
+                        // Safety outranks the advertised deadline. The updater shares the same
+                        // absolute deadline and will deterministically defer before InstallRoot
+                        // mutation if the process cannot quiesce in time.
+                        await _context.Catalog.MutationAdmission
+                            .WaitForIdleAsync(CancellationToken.None)
+                            .ConfigureAwait(true);
+                    }
+                }
+                else
+                {
+                    await _context.Catalog.MutationAdmission
+                        .WaitForIdleAsync(CancellationToken.None)
+                        .ConfigureAwait(true);
+                }
+            }
+
             HoverVideoCoordinator.Shared.StopAll();
             if (_placement is not null)
             {
