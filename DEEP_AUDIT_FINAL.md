@@ -116,11 +116,11 @@ Every X record was classified by tracing the current source producer → durable
 
 | ID | Classification | Primary source evidence / disposition |
 | --- | --- | --- |
-| X01 | CONFIRMED-SOURCE | ProfileAppearanceRules permits VIDEO CoverFrame; CriticalIntegrityGate cover SQL permits IMAGE only. |
-| X02 | CONFIRMED-SOURCE | App handoff carries Manifest, but Updater ReplacementEngine.HandoffData contains no Manifest/hash authority. |
-| X03 | CONFIRMED-SOURCE | Host sets Worker install-root environment to application InstallRoot; Worker resolves InstallRoot/models; package installs workers/models. |
-| X04 | CONFIRMED-SOURCE | ProfileOperations supports optional rename enqueue; production ProfileDetailViewModel constructs it without enqueue wiring. |
-| X05 | CONFIRMED-SOURCE | MediaOperations supports optional owner-relocation enqueue; production detail path constructs it without enqueue wiring. |
+| X01 | `src/Neuterradise.Runtime/Profiles/ProfileAppearanceRules.cs` — canonical Cover media/source/timestamp semantics; `src/Neuterradise.Runtime/Profiles/ProfileAppearanceOperations.cs` — durable Cover source metadata producer; `src/Neuterradise.Runtime/SystemServices/Lifecycle/CriticalIntegrityGate.cs` — startup appearance integrity consumer. |
+| X02 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateHandoffService.cs` — exact handoff/manifest digest producer; `src/Neuterradise.Release.Contracts/UpdateManifestAuthority.cs` — shared manifest digest authority; `src/Neuterradise.Updater/Program.cs` and `src/Neuterradise.Updater/ReplacementEngine.cs` — isolated helper digest consumer and pre-replacement byte revalidation; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs` / `UpdateStartupRecovery.cs` — durable manifest-authority recovery chain. |
+| X03 | `release-contract.json` and `src/Neuterradise.Release.Contracts/ReleaseContract.cs` — canonical deployed model-root contract; `scripts/package-win-x64.ps1` — model deployment producer; `src/Neuterradise.Profiling.Worker/WorkerRuntimeEnvironment.cs` — Worker model-root consumer. |
+| X04 | `src/Neuterradise.Runtime/Profiles/ProfileOperations.cs` — rename mutation/operation producer; `src/Neuterradise.Runtime/SystemServices/Jobs/ReconciliationJobAuthority.cs` — transaction-owned durable job authority and startup backfill; `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — startup recovery consumer; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/ProfileRenameReconciliationJobHandler.cs` — reconciliation executor. |
+| X05 | `src/Neuterradise.Runtime/Media/MediaOperations.cs` — OWNER mutation/relocation-operation producer; `src/Neuterradise.Runtime/SystemServices/Jobs/ReconciliationJobAuthority.cs` — transaction-owned durable job authority and startup backfill; `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — startup recovery consumer; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/OwnerRelocationJobHandler.cs` — relocation executor. |
 | X06 | CONFIRMED-SOURCE | Asset Trash deletes OWNER only; DB trigger forbids non-ACTIVE asset while any profile_assets relation remains. |
 | X07 | CONFIRMED-SOURCE | Profile Trash sets trashed marker without resolving all profile_assets/active identity required by DB trigger. |
 | X08 | CONFIRMED-SOURCE | Profile physical recovery work lacks equivalent restart handling; TrashRecovery handles EXECUTING/IN_TRASH Asset branches, not the paired Profile path. |
@@ -156,14 +156,14 @@ Every X record was classified by tracing the current source producer → durable
 | X40 | CONFIRMED-SOURCE | ApplyLanguageAsync mutates CurrentLanguage/SurfaceText before durable configuration save succeeds. |
 | X41 | CONFIRMED-SOURCE | LatestValueAction drains with ConfigureAwait(false); theme/presentation apply path can therefore enter live presentation from a worker continuation. |
 | X42 | CONFIRMED-SOURCE | Several queued UiDispatch.Run callbacks do not recheck route lifetime/generation inside the callback, e.g. final ShowReady path. |
-| X43 | CONFIRMED-SOURCE | release workflow sets custom NUGET_PACKAGES; package script locates OpenCvSharp under USERPROFILE/.nuget/packages instead. |
-| X44 | CONFIRMED-SOURCE | UpdatePackageValidator requires app executable but does not independently require Worker/Updater core membership for arbitrary approved manifests. |
+| X43 | `.github/workflows/release.yml` — custom `NUGET_PACKAGES` producer; `scripts/package-win-x64.ps1` — package verification now resolves the effective `NUGET_PACKAGES` authority before falling back to the user-profile default. |
+| X44 | `release-contract.json` and `src/Neuterradise.Release.Contracts/ReleaseContract.cs` — single required-release-member authority; `scripts/package-win-x64.ps1` — package producer/enforcer; `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageValidator.cs` and `src/Neuterradise.Updater/ReplacementEngine.cs` — runtime/helper consumers. |
 | X45 | CONFIRMED-HARDENING | UpdateTrustPolicy explicitly states publisher identity verification is not part of v0.0.1 trust contract. |
 | X46 | CONFIRMED-HARDENING | release workflow grants contents:write while build job consumes movable major action tags. |
 | X47 | CONFIRMED-SOURCE | Successful updater path has no convergent terminal cleanup owner for operation payload/tools and replacement backup/staging residues. |
 | X48 | CONFIRMED-SOURCE | UpdateStateStore.LoadAsync can throw corrupt JSON before UpdateStartupRecovery's typed plan/handoff corruption catches. |
-| X49 | CONFIRMED-SOURCE | Manifest MinimumCompatibleVersion exists but UpdateTrustPolicy only checks runtime and newer ProductVersion. |
-| X50 | CONFIRMED-HARDENING | global.json does not pin an exact .NET SDK; canonical restore/build lacks a fully locked toolchain/dependency authority. |
+| X49 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateManifest.cs` — strict candidate/minimum version syntax and ordering; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs` — installed-version compatibility enforcement including explicit cross-major minimum authority. |
+| X50 | `global.json` and `.github/workflows/release.yml` — exact .NET SDK 10.0.401 authority; `scripts/build.ps1` — exact-SDK fail-closed check and dependency-declaration provenance digest; `Directory.Build.props` / project files — declared dependency authority. **Still open:** no checked-in NuGet `packages.lock.json` graph / locked restore authority exists yet. |
 | X51 | REJECTED | Current JobRecovery exhausts final attempts instead of intentionally requeueing them. |
 | X52 | CONFIRMED-SOURCE | AppBootstrapper disposes BootstrapContext/VaultLock on callback failure before App-level CleanupPartialStartupAsync disposes runtime created during prewarm. |
 | X53 | CONFIRMED-SOURCE | Startup blocks only Recovery.HasFatal; CriticalIntegrityGate does not cover path_state NEEDS_ATTENTION, so path authority ambiguity can remain writable. |
@@ -177,14 +177,14 @@ Every X record was classified by tracing the current source producer → durable
 | X61 | EXECUTION-EVIDENCE-GAP | Cross-domain lifecycle matrix must become an executable regression gate. |
 | X62 | AUDIT-CONTROL | X27–X29 provenance cannot be recovered; IDs remain reserved. |
 | X63 | AUDIT-CONTROL | Historical Stage 7 ID collision is superseded; canonical IDs are frozen. |
-| X64 | CONFIRMED-HARDENING | Extraction uses shared containment defenses, but explicit extraction-boundary proof/static-analysis clarity remains a security-hardening requirement. |
+| X64 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs` — explicit canonical ZIP-entry segment validation, full-path containment proof, shared reparse-aware authority, and immediate pre-write re-resolution. |
 | X65 | EXECUTION-EVIDENCE-GAP | Whether canonical Compress-Archive emits directory entries rejected by the stager must be proven with the exact ZIP artifact. |
 | X66 | CONFIRMED-SOURCE | Cancelled completion branch does not invoke immediate terminal observer; normal correctness can wait for terminal reconciliation polling. |
 | X67 | CONFIRMED-SOURCE | MediaActivationArbiter delays first-click action by GetDoubleClickTime/500ms fallback. |
 | X68 | CONFIRMED-SOURCE | Shell work/status projection is driven by a 750ms PeriodicTimer instead of normal change signaling. |
 | X69 | CONFIRMED-SOURCE | focused-import priority resolves jobs through candidate_asset_id only; shared reused_asset_id work has no durable per-unit interest model. |
 | X70 | CONFIRMED-SOURCE | UI copy command synchronously reaches Win32Clipboard.SetText, whose retry loop uses Thread.Sleep. |
-| X71 | CONFIRMED-HARDENING | FFmpeg identity is pinned but clean-build availability depends on an external upstream release URL. |
+| X71 | `release-contract.json` — project-controlled FFmpeg mirror location; `scripts/package-win-x64.ps1` — mirror-first exact-SHA retrieval with exact upstream fallback. **Still open:** the declared project mirror Release asset has not yet been published. |
 | X72 | CONFIRMED-SOURCE | REUSE decision is not transactionally revalidated against current active/content/package authority immediately before commit. |
 | X73 | CONFIRMED-SOURCE | cancellation exclusivity query excludes reused_asset_id only within the same ImportUnit and can trash an asset another live import reuses. |
 
@@ -396,6 +396,21 @@ Create persisted valid and invalid appearance fixtures, restart through the actu
 
 ---
 
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Lifecycle/CriticalIntegrityGate.cs`  
+**Traceability checked:** `ProfileAppearanceRules.IsCoverMediaTypeEligible`, `ResolveCoverSourceKind`, `IsCoverVisualSourceValid`; `ProfileAppearanceOperations.SetCoverAssetAsync` / durable `ProfileAppearanceOverrides`; startup `CriticalIntegrityGate.CheckActiveAppearanceReferencesAsync`; appearance DB trigger semantics.  
+**Root-cause correction:** Startup integrity no longer hard-codes IMAGE-only Cover authority. It consumes the same image/video-frame semantics as the write path and requires durable VideoFrame source/timestamp evidence for VIDEO covers.  
+**Regression guard:** Every startup integrity evaluation parses the durable appearance overrides and calls `ProfileAppearanceRules.IsCoverVisualSourceValid`; ambiguous legacy VIDEO Covers fail closed instead of being inferred.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; no build, test, or application execution was performed in R1.  
+**Dependency findings checked:** X06, X07, X08, X37, X38, X42  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Runtime/startup execution remains R8 evidence.
+
 ## X02 — Updater helper loses manifest/hash authority after handoff
 
 **Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
@@ -448,6 +463,21 @@ Recovery must use the same manifest authority rather than inventing a weaker val
 Disposable InstallRoot E2E test with deliberate staging mutation between handoff and helper replacement.
 
 ---
+
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Updates/UpdateManifest.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateHandoffService.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStartupRecovery.cs`; `src/Neuterradise.Updater/Program.cs`; `src/Neuterradise.Updater/ReplacementEngine.cs`; `src/Neuterradise.Release.Contracts/UpdateManifestAuthority.cs`; `src/Neuterradise.Release.Contracts/ReleaseContract.cs`; `src/Neuterradise.Runtime/Neuterradise.Runtime.csproj`; `src/Neuterradise.Updater/Neuterradise.Updater.csproj`; `release-contract.json`.  
+**Traceability checked:** Handoff producer → exact handoff bytes → command-line digest authority → helper parser → manifest digest → staged-copy membership/hash validation → immediate pre-InstallRoot validation → recovery journal → startup replacement validation.  
+**Root-cause correction:** The updater helper now receives immutable handoff and manifest-authority digests, verifies the exact serialized handoff, carries the approved manifest itself, hashes every staged approved file, checks exact membership/control manifest/reparse ancestry, revalidates immediately before moving InstallRoot, and persists the manifest digest through recovery.  
+**Regression guard:** Helper execution fails closed on changed handoff bytes, changed manifest authority, missing/extra staged members, byte-length/SHA mismatch, control-manifest contradiction, or reparse-point ancestry; startup recovery also requires the journal digest to match the durable handoff manifest.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; updater replacement/recovery execution remains R8.  
+**Dependency findings checked:** X44, X45, X47, X48, X49, X55, X60, X64, X65  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Executable updater crash/replacement matrix remains R8 evidence.
 
 ## X03 — Packaged profiling model root disagrees with Worker resolver
 
@@ -502,6 +532,21 @@ Packaged Worker handshake plus one real YuNet/SFace inference in the packaged la
 
 ---
 
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `release-contract.json`; `src/Neuterradise.Release.Contracts/Neuterradise.Release.Contracts.csproj`; `src/Neuterradise.Release.Contracts/ReleaseContract.cs`; `src/Neuterradise.Profiling.Worker/Neuterradise.Profiling.Worker.csproj`; `src/Neuterradise.Profiling.Worker/WorkerRuntimeEnvironment.cs`; `scripts/package-win-x64.ps1`; `NeuTerradise.sln`.  
+**Traceability checked:** Package model deployment under InstallRoot → shared embedded release contract → Worker InstallRoot environment → `WorkerRuntimeEnvironment.ModelsRoot` → YuNet/SFace consumers.  
+**Root-cause correction:** `workers/models` is now one canonical model-root value in `release-contract.json`, consumed by both packaging and the Worker instead of being independently reconstructed.  
+**Regression guard:** Packaging must produce the contract-declared YuNet/SFace members and Worker startup resolves the embedded identical `modelsRelativeRoot`; missing/invalid contract data fails closed.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; packaged Worker inference remains R8/X59.  
+**Dependency findings checked:** X30, X31, X33, X35, X44, X59  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Packaged Worker/model E2E remains R8 evidence.
+
 ## X04 — Profile rename reconciliation obligations lack guaranteed production enqueue
 
 **Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
@@ -538,6 +583,21 @@ Make the durable rename mutation and scheduling obligation one production contra
 End-to-end rename → job → PathReconciler → restart convergence.
 
 ---
+
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `src/Neuterradise.Runtime/Profiles/ProfileOperations.cs`; `src/Neuterradise.Runtime/SystemServices/Jobs/ReconciliationJobAuthority.cs`; `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs`.  
+**Traceability checked:** Profile rename mutation → persisted reconciliation operation/path state → transaction-owned deterministic job row → scheduler startup backfill → `ProfileRenameReconciliationJobHandler`. Production `ProfileDetailViewModel` no longer needs to be the authority for enqueue correctness.  
+**Root-cause correction:** A rename obligation and its reconciliation job are committed atomically in the same catalog transaction; startup also backfills historical PENDING/NEEDS_ATTENTION obligations whose deterministic job row is missing.  
+**Regression guard:** The durable job id equals the reconciliation operation id, insertion is mandatory before mutation commit, and scheduler startup repairs only missing historical obligations before normal interrupted-job reconciliation.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; job execution/restart remains R8.  
+**Dependency findings checked:** X17, X19, X21, X24, X52, X53, X54  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Scheduler/restart execution remains R8 evidence.
 
 ## X05 — OWNER relocation obligations lack guaranteed production enqueue
 
@@ -578,6 +638,21 @@ Database OWNER and final managed path must converge after every injected crash b
 ---
 
 # 7. Stage 3 — Database / Persistence / Lifecycle Findings
+
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `src/Neuterradise.Runtime/Media/MediaOperations.cs`; `src/Neuterradise.Runtime/SystemServices/Jobs/ReconciliationJobAuthority.cs`; `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs`.  
+**Traceability checked:** OWNER mutation → persisted relocation operation/path state → transaction-owned deterministic job row → scheduler startup backfill → `OwnerRelocationJobHandler`.  
+**Root-cause correction:** OWNER relocation can no longer commit a durable relocation obligation without also committing its scheduler job; post-commit signaling is only a wake-up optimization, not correctness authority.  
+**Regression guard:** Job id is the reconciliation operation id, transaction insertion is mandatory, and startup backfill restores missing historical ACTIVE-asset PENDING/NEEDS_ATTENTION obligations.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; relocation/restart execution remains R8.  
+**Dependency findings checked:** X17, X19, X21, X52, X53, X54  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Scheduler/relocation execution remains R8 evidence.
 
 ## X06 — Asset Trash fails when APPEARS or MANUAL relations remain
 
@@ -1775,6 +1850,21 @@ Package/build succeeds from a non-default NuGet root without hidden fallback.
 
 ---
 
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `scripts/package-win-x64.ps1`  
+**Traceability checked:** Release workflow `NUGET_PACKAGES` environment → canonical restore → OpenCvSharp package-root verification → published Worker native runtime comparison.  
+**Root-cause correction:** Package verification now resolves the effective `NUGET_PACKAGES` root supplied by CI and falls back to `%USERPROFILE%\.nuget\packages` only when no override exists.  
+**Regression guard:** OpenCvSharp native verification fails closed unless exactly one restored pinned native DLL is found under the effective NuGet root and its bytes equal the published Worker DLL.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; canonical Release build remains R8/X56.  
+**Dependency findings checked:** X44, X50, X56  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Exact canonical build execution remains R8 evidence.
+
 ## X44 — Release/package validation does not share one complete required-member contract
 
 **Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
@@ -1806,6 +1896,21 @@ Negative matrix removing one required member at a time.
 No incomplete package reaches artifact/release acceptance.
 
 ---
+
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `release-contract.json`; `src/Neuterradise.Release.Contracts/Neuterradise.Release.Contracts.csproj`; `src/Neuterradise.Release.Contracts/ReleaseContract.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageValidator.cs`; `src/Neuterradise.Updater/ReplacementEngine.cs`; `scripts/package-win-x64.ps1`; `scripts/build.ps1`; `src/Neuterradise.Runtime/Neuterradise.Runtime.csproj`; `src/Neuterradise.Profiling.Worker/Neuterradise.Profiling.Worker.csproj`; `src/Neuterradise.Updater/Neuterradise.Updater.csproj`; `NeuTerradise.sln`.  
+**Traceability checked:** One release contract → package required-member assertions → release/update manifest membership → runtime package validator → isolated updater helper staged validation → canonical build output check.  
+**Root-cause correction:** App, Worker, Updater, models, media tools, deployment manifests, notices, and unique OpenCvSharp native membership are now defined once in the shared release contract rather than by divergent producer/consumer lists.  
+**Regression guard:** Packaging, canonical build validation, runtime update validation, and helper pre-replacement validation all fail closed against the same contract; the contract is embedded into code and shipped as deployment evidence.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; package/build/runtime evidence remains R8.  
+**Dependency findings checked:** X02, X03, X43, X49, X50, X57, X59, X60, X65, X71  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Executable package/build validation remains R8 evidence.
 
 ## X45 — Update trust lacks independent publisher authenticity
 
@@ -1959,6 +2064,21 @@ Trust decision must fail before staging when compatibility is not satisfied.
 
 ---
 
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Updates/UpdateManifest.cs`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs`  
+**Traceability checked:** update manifest parser → product/runtime identity → strict candidate version → installed version → `MinimumCompatibleVersion` → trust decision → handoff.  
+**Root-cause correction:** `MinimumCompatibleVersion` is now parsed and enforced; the installed product must meet it, the minimum cannot exceed the candidate, and cross-major updates require an explicit minimum authority.  
+**Regression guard:** Noncanonical/non-numeric version strings, incompatible installed versions, impossible minimums, and cross-major updates without an explicit minimum fail closed before staging/handoff.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; update acceptance execution remains R8.  
+**Dependency findings checked:** X02, X44, X45, X60  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Executable update compatibility cases remain R8 evidence.
+
 ## X50 — Canonical toolchain/dependency graph is not reproducibly locked
 
 **Status:** CONFIRMED-HARDENING / OPEN-IMPLEMENTATION
@@ -1989,6 +2109,21 @@ Rebuild the same SHA from a clean environment and compare provenance/package mem
 ---
 
 # 15. Stage 10 — Cross-Domain Adversarial Findings
+
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `global.json`; `.github/workflows/release.yml`; `scripts/build.ps1`  
+**Traceability checked:** global SDK resolver → Actions setup-dotnet → canonical build SDK assertion → project/MSBuild declarations → build provenance dependency-declaration digest. Repository history was also checked for existing `packages.lock.json` authority and none exists.  
+**Root-cause correction:** Exact .NET SDK 10.0.401 with `rollForward=disable` is now a single fail-closed authority, and build provenance records both the resolved SDK and a digest over dependency declarations. The transitive NuGet dependency graph is not yet locked.  
+**Regression guard:** Canonical build refuses any SDK other than 10.0.401 and records dependency-declaration provenance; a true NuGet locked-mode guard cannot be enabled until trustworthy lockfiles are generated from an exact restore.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — attempted disposable lock generation was not possible because the available execution environment has no `dotnet` and no DNS/network; no lockfile was fabricated.  
+**Dependency findings checked:** X43, X44, X46, X56  
+**Source status:** OPEN-IMPLEMENTATION  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Generate and commit authentic NuGet `packages.lock.json` files from exact SDK 10.0.401, then enforce locked restore in the canonical path. Until that is done, X50 remains open.
 
 ## X51 — Final-attempt crash does not leave the current JobRecovery path permanently RUNNABLE
 
@@ -2479,6 +2614,21 @@ The security query must no longer report the extraction sink, and all malicious 
 
 ---
 
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs`  
+**Traceability checked:** ZIP entry name → normalized segment validation → canonical `Path.GetFullPath` destination → explicit staging-root prefix proof → shared `RootPathRules.ResolveContainedPath` reparse-aware proof → parent creation → repeated immediate pre-write proof.  
+**Root-cause correction:** Extraction containment is now explicit in the stager itself instead of relying only on a shared helper whose safety properties were opaque to static analysis.  
+**Regression guard:** Rooted, empty, dot/dot-dot, colon/NUL, containment disagreement, reparse-point, duplicate, oversized, and compression-ratio violations fail closed before file creation; containment is recomputed after parent creation immediately before mutation.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/traceability review completed; exact packaged ZIP behavior remains R8/X65.  
+**Dependency findings checked:** X02, X44, X60, X65  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** X65 exact ZIP-artifact execution evidence remains separately open in R8.
+
 ## X65 — Canonical ZIP directory-entry incompatibility requires executable artifact evidence
 
 **Status:** EXECUTION-EVIDENCE-GAP
@@ -2778,6 +2928,21 @@ Clean-cache build test using the durable source; upstream-unavailable simulation
 The exact pinned FFmpeg bytes remain reproducibly obtainable from an authority controlled by the release process even if the original external URL is unavailable.
 
 ---
+
+
+### R1 implementation closure record — 2026-09-19
+
+**Implementation SHA:** f937fc8a2d85638107b6753e38bde8e41d1a16e0  
+**Primary remediation phase:** R1  
+**Changed paths:** `release-contract.json`; `scripts/package-win-x64.ps1`  
+**Traceability checked:** pinned BtbN archive identity/SHA → project-controlled mirror contract → cache identity/hash validation → upstream fallback → extracted ffmpeg/ffprobe source revision validation → deployment provenance. GitHub Releases for this repository were checked and are currently empty.  
+**Root-cause correction:** Packaging now has a project-controlled mirror authority and tries it first with the same pinned SHA-256; the original exact upstream source remains a fallback. The declared mirror asset does not yet exist, so durable independent availability is not yet established.  
+**Regression guard:** Both mirror and upstream cache entries are hash-bound to the exact pinned archive; extracted ffmpeg/ffprobe must report the expected source revision before packaging.  
+**Verification result:** PENDING-EXTERNAL-ARTIFACT — the current GitHub connector exposes no create-release/upload-release-asset operation, so the pinned archive cannot be published to the declared project mirror from this session.  
+**Dependency findings checked:** X44, X50, X56  
+**Source status:** OPEN-IMPLEMENTATION  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** Publish the exact SHA-256-pinned FFmpeg archive at the project-controlled Release URL in `release-contract.json`; only then may X71 be SOURCE-CLOSED.
 
 ## X72 — REUSE authority is not revalidated at the commit boundary
 
@@ -3102,6 +3267,8 @@ Target:
 - X71.
 
 X65 is an execution-evidence task and belongs to R8, not source remediation unless reproduced.
+
+**R1 implementation status — 2026-09-19:** OPEN-IMPLEMENTATION. X01, X02, X03, X04, X05, X43, X44, X49, and X64 are SOURCE-CLOSED at implementation SHA `f937fc8a2d85638107b6753e38bde8e41d1a16e0`. X50 remains open for authentic NuGet lockfiles/locked restore; X71 remains open until the pinned FFmpeg archive is actually published to the project-controlled mirror declared by `release-contract.json`. Runtime/build verification remains R8.
 
 Reason: later fixes depend on stable appearance, deployment, model, path-job, package, compatibility, and build authorities.
 
