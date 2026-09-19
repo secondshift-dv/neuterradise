@@ -249,6 +249,7 @@ public sealed class SettingsOperations
         string layoutPresetId,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetDefaultProfileLayoutAsync));
         var presetId = layoutPresetId?.Trim();
         if (string.IsNullOrEmpty(presetId) || !ProfileLayoutResolver.IsBuiltInPresetId(presetId))
         {
@@ -292,6 +293,7 @@ public sealed class SettingsOperations
         string themeId,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetThemeAsync));
         var normalized = themeId?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(normalized))
         {
@@ -372,6 +374,7 @@ public sealed class SettingsOperations
         DensityMode mode,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetDensityAsync));
         if (!Enum.IsDefined(mode))
         {
             return OperationResult<DensityMode>.Validation(
@@ -390,6 +393,7 @@ public sealed class SettingsOperations
         string modeText,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetDensityAsync));
         if (Enum.TryParse<DensityMode>(modeText?.Trim(), ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
         {
             return await SetDensityAsync(parsed, cancellationToken).ConfigureAwait(false);
@@ -428,6 +432,7 @@ public sealed class SettingsOperations
         bool reduceMotion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetReduceMotionAsync));
         await new SettingsWrites(_catalog, _timeProvider)
             .SetSettingAsync(ReduceMotionKey, JsonSerializer.Serialize(reduceMotion), cancellationToken)
             .ConfigureAwait(false);
@@ -460,6 +465,7 @@ public sealed class SettingsOperations
         GalleryPresentationPreference preferences,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetGalleryPresentationPreferencesAsync));
         ArgumentNullException.ThrowIfNull(preferences);
 
         if (preferences.SchemaVersion != GalleryCardCatalog.SupportedSchemaVersion)
@@ -509,6 +515,7 @@ public sealed class SettingsOperations
         string json,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetGalleryPresentationPreferencesAsync));
         if (string.IsNullOrWhiteSpace(json))
         {
             return OperationResult<GalleryPresentationPreference>.Validation(
@@ -546,6 +553,7 @@ public sealed class SettingsOperations
         MediaPreferences preferences,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetMediaPreferencesAsync));
         ArgumentNullException.ThrowIfNull(preferences);
 
         if (preferences.SchemaVersion != 1)
@@ -600,6 +608,7 @@ public sealed class SettingsOperations
         ImportPreferences preferences,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetImportPreferencesAsync));
         ArgumentNullException.ThrowIfNull(preferences);
 
         if (preferences.SchemaVersion != 1)

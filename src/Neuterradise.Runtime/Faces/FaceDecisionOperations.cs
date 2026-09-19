@@ -10,6 +10,7 @@ public sealed class FaceDecisionOperations
 
     private const string FaceConfirmationProvenance = "face-confirmation";
 
+    private readonly CatalogDb _catalog;
     private readonly CatalogConnectionFactory _connectionFactory;
     private readonly CatalogWriteCoordinator _writeCoordinator;
     private readonly TimeProvider _timeProvider;
@@ -17,6 +18,7 @@ public sealed class FaceDecisionOperations
     public FaceDecisionOperations(CatalogDb catalog, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _connectionFactory = catalog.ConnectionFactory;
         _writeCoordinator = catalog.WriteCoordinator;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -26,6 +28,7 @@ public sealed class FaceDecisionOperations
         ConfirmFaceCommand command,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ConfirmFaceAsync));
         ArgumentNullException.ThrowIfNull(command);
         EnsureNonEmpty(command.FaceId, nameof(command.FaceId));
         EnsureNonEmpty(command.ProfileId, nameof(command.ProfileId));
@@ -164,6 +167,7 @@ public sealed class FaceDecisionOperations
         RejectFaceCommand command,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RejectFaceAsync));
         ArgumentNullException.ThrowIfNull(command);
         EnsureNonEmpty(command.FaceId, nameof(command.FaceId));
 
@@ -241,6 +245,7 @@ public sealed class FaceDecisionOperations
         ChangeFaceConfirmationCommand command,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ChangeFaceConfirmationAsync));
         ArgumentNullException.ThrowIfNull(command);
         EnsureNonEmpty(command.FaceId, nameof(command.FaceId));
         if (command.ProfileId is Guid profileId)

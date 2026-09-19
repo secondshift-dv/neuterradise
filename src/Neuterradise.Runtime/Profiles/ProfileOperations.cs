@@ -43,6 +43,7 @@ public sealed class ProfileOperations
         CreateNormalProfileCommand command,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(CreateNormalProfileAsync));
         ArgumentNullException.ThrowIfNull(command);
         if (command.ProfileId == Guid.Empty)
         {
@@ -96,6 +97,7 @@ public sealed class ProfileOperations
         CreateUnknownProfileCommand command,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(CreateUnknownProfileAsync));
         ArgumentNullException.ThrowIfNull(command);
         if (command.ProfileId == Guid.Empty)
         {
@@ -119,6 +121,7 @@ public sealed class ProfileOperations
         RenameProfileRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RenameProfileAsync));
         ArgumentNullException.ThrowIfNull(request);
         if (request.ProfileId == Guid.Empty)
         {
@@ -357,6 +360,7 @@ public sealed class ProfileOperations
         UpdateProfileMetadataRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(UpdateProfileMetadataAsync));
         ArgumentNullException.ThrowIfNull(request);
         if (request.ProfileId == Guid.Empty)
         {
@@ -595,6 +599,7 @@ public sealed class ProfileOperations
         AddProfileAssetRelationRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(AddAppearsRelationAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request.ProfileId));
         EnsureNonEmpty(request.AssetId, nameof(request.AssetId));
@@ -635,6 +640,7 @@ public sealed class ProfileOperations
         RemoveProfileAssetRelationRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RemoveAppearsRelationAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request.ProfileId));
         EnsureNonEmpty(request.AssetId, nameof(request.AssetId));
@@ -671,6 +677,7 @@ public sealed class ProfileOperations
         AddProfileAssetRelationRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(AddManualRelationAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request.ProfileId));
         EnsureNonEmpty(request.AssetId, nameof(request.AssetId));
@@ -711,6 +718,7 @@ public sealed class ProfileOperations
         RemoveProfileAssetRelationRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RemoveManualRelationAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request.ProfileId));
         EnsureNonEmpty(request.AssetId, nameof(request.AssetId));
@@ -747,6 +755,7 @@ public sealed class ProfileOperations
         TransferAssetOwnershipRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(TransferAssetOwnershipAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.AssetId, nameof(request.AssetId));
         EnsureNonEmpty(request.NewOwnerProfileId, nameof(request.NewOwnerProfileId));

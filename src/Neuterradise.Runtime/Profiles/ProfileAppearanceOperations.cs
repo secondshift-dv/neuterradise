@@ -14,6 +14,7 @@ namespace Neuterradise.App.Profiles;
 
 public sealed class ProfileAppearanceOperations
 {
+    private readonly CatalogDb _catalog;
     private readonly CatalogConnectionFactory _connectionFactory;
     private readonly CatalogWriteCoordinator _writeCoordinator;
     private readonly BannerPreviewRefreshEnqueue? _bannerPreviewRefresh;
@@ -25,6 +26,7 @@ public sealed class ProfileAppearanceOperations
         BannerPreviewRefreshEnqueue? bannerPreviewRefresh = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _connectionFactory = catalog.ConnectionFactory;
         _writeCoordinator = catalog.WriteCoordinator;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -35,6 +37,7 @@ public sealed class ProfileAppearanceOperations
         SetCoverAssetRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetCoverAssetAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request));
 
@@ -136,6 +139,7 @@ public sealed class ProfileAppearanceOperations
         SetBannerAssetRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetBannerAssetAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request));
 
@@ -270,6 +274,7 @@ public sealed class ProfileAppearanceOperations
         long expectedProfileRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ClearAppearanceReferencesAsync));
         EnsureNonEmpty(profileId, nameof(profileId));
 
         await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
@@ -334,6 +339,7 @@ public sealed class ProfileAppearanceOperations
         SetProfileLayoutOverrideRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetProfileLayoutOverrideAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request));
 
@@ -360,6 +366,7 @@ public sealed class ProfileAppearanceOperations
         SetProfileGalleryCardOverrideRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetProfileGalleryCardOverrideAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request));
 
@@ -389,6 +396,7 @@ public sealed class ProfileAppearanceOperations
         SetProfileCoverAppearanceRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetProfileCoverAppearanceAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request));
 
@@ -456,6 +464,7 @@ public sealed class ProfileAppearanceOperations
         SetProfileBannerPresentationRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetProfileBannerPresentationAsync));
         ArgumentNullException.ThrowIfNull(request);
         EnsureNonEmpty(request.ProfileId, nameof(request));
 
@@ -507,6 +516,7 @@ public sealed class ProfileAppearanceOperations
         ApplyProfilePresentationRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ApplyPresentationAsync));
         await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = CatalogTransaction.Begin(connection, _writeCoordinator);
