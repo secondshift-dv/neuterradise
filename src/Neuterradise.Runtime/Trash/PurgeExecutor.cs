@@ -158,18 +158,29 @@ public sealed class PurgeExecutor
                 Guid.NewGuid());
         }
 
-        await _catalog.TrashWrites.PersistEntryAsync(
-                new TrashEntryPersistence(
-                    plan.PurgePlanId,
-                    OperationEntityType(plan.EntityType),
-                    plan.EntityId,
-                    PurgePlanState.Pending,
-                    RecoveryRelativePath: null,
-                    plan.ToJson(),
-                    plan.PreparedAtUtc,
-                    plan.PreparedAtUtc),
-                cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await _catalog.TrashWrites.PersistEntryAsync(
+                    new TrashEntryPersistence(
+                        plan.PurgePlanId,
+                        OperationEntityType(plan.EntityType),
+                        plan.EntityId,
+                        PurgePlanState.Pending,
+                        RecoveryRelativePath: null,
+                        plan.ToJson(),
+                        plan.PreparedAtUtc,
+                        plan.PreparedAtUtc),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (SqliteException exception) when (
+            expectedEntityType == PurgeEntityType.Profile
+            && exception.SqliteErrorCode == 19)
+        {
+            return OperationResult<PurgePlan>.Conflict(
+                OperationErrorCode.PurgeStateInvalid,
+                "Profile Restore started before this Purge authorization could be persisted. Finish Restore before preparing Purge again.");
+        }
 
         return OperationResult<PurgePlan>.Success(plan, plan.OperationId);
     }

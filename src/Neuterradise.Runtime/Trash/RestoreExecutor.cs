@@ -571,16 +571,12 @@ public sealed class RestoreExecutor
                 OperationErrorCode.TrashPlanUnreadable,
                 "This Profile Trash record cannot be read safely.");
         }
-        if (currentPlan.RestoreCheckpoint is not null)
-        {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return OperationResult<ProfileTrashPlan>.Success(currentPlan, currentPlan.OperationId);
-        }
-
-        var checkpointed = currentPlan with
-        {
-            RestoreCheckpoint = new ProfileRestoreCheckpoint(recoveryRelativePath, targetManagedRelativePath),
-        };
+        var checkpointed = currentPlan.RestoreCheckpoint is not null
+            ? currentPlan
+            : currentPlan with
+            {
+                RestoreCheckpoint = new ProfileRestoreCheckpoint(recoveryRelativePath, targetManagedRelativePath),
+            };
         await TrashCoordinator.CheckpointTrashEntryAsync(
             transaction,
             currentEntry.TrashEntryId,
