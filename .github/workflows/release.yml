@@ -40,7 +40,7 @@ jobs:
           path: |
             ${{ env.NUGET_PACKAGES }}
             ${{ env.NEUTERRADISE_BUILD_CACHE }}
-          key: neuterradise-windows-${{ hashFiles('global.json', 'Directory.Build.props', '**/*.csproj', 'scripts/package-win-x64.ps1') }}
+          key: neuterradise-windows-${{ hashFiles('global.json', 'Directory.Build.props', '**/*.csproj', '**/packages.lock.json', 'scripts/package-win-x64.ps1') }}
           restore-keys: |
             neuterradise-windows-
 

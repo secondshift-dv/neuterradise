@@ -132,11 +132,17 @@ try {
     $distZip = Join-Path $DistRoot $zipName
     $distManifest = Join-Path $DistRoot 'update.json'
     $provenancePath = Join-Path $DistRoot 'build-provenance.json'
+    $projectFiles = @(Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot 'src') -File -Recurse -Filter '*.csproj' | ForEach-Object { $_.FullName })
+    $lockFiles = @(Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot 'src') -File -Recurse -Filter 'packages.lock.json' | ForEach-Object { $_.FullName })
+    if ($lockFiles.Count -ne $projectFiles.Count) {
+        throw "Canonical dependency authority requires one packages.lock.json per project. Projects=$($projectFiles.Count), lockfiles=$($lockFiles.Count)."
+    }
+
     $dependencyAuthorityFiles = @(
         (Join-Path $RepositoryRoot 'global.json'),
         (Join-Path $RepositoryRoot 'Directory.Build.props'),
         $ReleaseContractPath
-    ) + @(Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot 'src') -File -Recurse -Filter '*.csproj' | ForEach-Object { $_.FullName })
+    ) + $projectFiles + $lockFiles
     $dependencyAuthorityLines = @($dependencyAuthorityFiles | Sort-Object | ForEach-Object {
         $relative = [IO.Path]::GetRelativePath($RepositoryRoot, $_).Replace('\', '/')
         $sha = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -144,11 +150,21 @@ try {
     })
     $dependencyAuthorityBytes = [Text.Encoding]::UTF8.GetBytes(($dependencyAuthorityLines -join "`n"))
     $dependencyAuthoritySha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($dependencyAuthorityBytes)).ToLowerInvariant()
+
+    $dependencyLockLines = @($lockFiles | Sort-Object | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($RepositoryRoot, $_).Replace('\', '/')
+        $sha = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$relative=$sha"
+    })
+    $dependencyLockBytes = [Text.Encoding]::UTF8.GetBytes(($dependencyLockLines -join "`n"))
+    $dependencyLockSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($dependencyLockBytes)).ToLowerInvariant()
+
     $provenance = [ordered]@{
         schemaVersion = 1
         sourceHead = $head
         dotnetSdkVersion = $sdkVersion
         dependencyDeclarationSha256 = $dependencyAuthoritySha256
+        dependencyLockSha256 = $dependencyLockSha256
         productVersion = $productVersion
         runtimeIdentifier = $runtimeIdentifier
         zipFileName = $zipName
