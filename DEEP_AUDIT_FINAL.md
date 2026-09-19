@@ -12,7 +12,7 @@
 **Audit status:** CLOSED-DOC  
 **Source remediation status:** OPEN  
 **Build/package/runtime acceptance:** NOT YET PROVEN  
-**Next valid finding ID:** X64
+**Next valid finding ID:** X74
 
 ---
 
@@ -79,9 +79,11 @@ Do not translate CLOSED-DOC into fixed, passed, safe, production-ready, or runti
 | 9 | Updater / Package / Release / Security | X43–X50 |
 | 10 | Cross-domain adversarial lifecycle | X51–X55 |
 | 11 | Build / Package / Runtime verification | X56–X61 |
-| 12 | Convergence / audit-control closure | X62–X63 |
+| 12 | Convergence / audit-control closure + final coverage reconciliation | X62–X73 |
 
-Concrete documented findings: **60**.  
+Concrete documented findings: **70**.  
+- **68 remediation/evidence findings:** X01–X26, X30–X61, X64–X73.  
+- **2 audit-control findings:** X62–X63.  
 Reserved historical IDs: **3**.
 
 ---
@@ -1944,6 +1946,10 @@ These findings are evidence defects. They are not satisfied by source inspection
 
 The audited tree has no accepted evidence proving the exact source baseline can complete the canonical Windows Release build.
 
+### Root cause / evidence gap
+
+The build/release workflow is not itself evidence of an executed build for the audited SHA. A manual workflow definition, source-level compile plausibility, or historical local package cannot prove that the exact audited tree restores and builds successfully under the canonical toolchain.
+
 ### Penyelesaian
 
 Run the canonical build on an exact recorded SHA with:
@@ -1975,6 +1981,10 @@ Canonical Release win-x64 build PASS on the intended fixed SHA.
 
 ZIP membership/hash/self-validation can prove package structure but cannot prove that the extracted product starts and its runtime paths resolve correctly.
 
+### Root cause / evidence gap
+
+Static package validation terminates before process creation, native loader resolution, model/tool discovery, AppState/Vault bootstrap, and actual application startup. Package integrity and runtime executability are different authorities.
+
 ### Penyelesaian
 
 Keep two separate gates:
@@ -2001,6 +2011,10 @@ Extract package to a disposable path and launch from that extracted layout.
 ### Temuan
 
 A repeatable verification environment is required to exercise startup and stateful lifecycle without touching a real user Vault or depending on ambient machine state.
+
+### Root cause / evidence gap
+
+Without an isolated harness, runtime checks depend on developer-machine state and cannot safely inject failures, restart boundaries, or destructive lifecycle scenarios. That makes the evidence non-repeatable and risks contaminating a real Vault.
 
 ### Penyelesaian
 
@@ -2031,6 +2045,10 @@ Cold start, warm start, shutdown, and restart in the isolated environment.
 ### Temuan
 
 Static package inspection does not prove native OpenCV load, worker protocol handshake, model path, model hash, YuNet detection, or SFace embedding.
+
+### Root cause / evidence gap
+
+Worker correctness crosses process, protocol, native ABI, packaged-path, and model-artifact boundaries. None of those boundaries is executed by source reading or ZIP hash validation.
 
 ### Penyelesaian
 
@@ -2064,6 +2082,10 @@ Real packaged inference PASS.
 
 Updater replacement/recovery correctness spans multiple processes and filesystem states and cannot be proven by unit/source reasoning alone.
 
+### Root cause / evidence gap
+
+The updater's safety properties depend on parent-process exit timing, operation-scoped staging, sibling backup/install directories, crash timing, journal durability, and restart reconciliation. Source inspection cannot prove the combined filesystem state machine.
+
 ### Penyelesaian
 
 Create disposable InstallRoot scenarios:
@@ -2096,6 +2118,10 @@ Every scenario converges to known installed, restored, blocked-recovery, or safe
 ### Temuan
 
 The audit identified lifecycle/race failures across import, jobs, Trash, Profile, startup, and shutdown. Without executable regression coverage, the same classes can return during remediation.
+
+### Root cause / evidence gap
+
+Historically, source fixes were accepted without one executable matrix that replays the cross-domain invariants and adversarial boundaries that produced the defects. That allows a local fix to regress a sibling lifecycle without an immediate gate.
 
 ### Penyelesaian
 
@@ -2139,6 +2165,10 @@ Reserve X27–X29 permanently. Do not fabricate contents and do not renumber lat
 
 Future finding register records ID, stage, title, evidence, root cause, solution, prevention, verification, status, and provenance atomically.
 
+### Verification
+
+The canonical ledger must contain no X27/X28/X29 finding body, must mark all three IDs RESERVED, and must preserve every later ID unchanged.
+
 ---
 
 ## X63 — Historical finding-ID collision in an old Stage 7 response
@@ -2163,9 +2193,578 @@ The old aliases are superseded.
 
 Finding IDs are immutable. New findings allocate max canonical ID + 1 only.
 
+### Verification
+
+A ledger validation pass must report every concrete finding ID exactly once, no duplicate X06–X09 aliases, X37 as the sole canonical Profile Purge FK-closure finding, and X74 as the next available ID after this certification.
+
 ---
 
-# 18. Dependency clusters
+# 18. Stage 12 — Final Coverage Reconciliation Findings
+
+The final coverage certification compared the canonical X ledger against the complete pre-stage historical current-audit register D38–D57 and the live frozen source tree. Ten active findings had been lost during ledger consolidation. They are not newly discovered defects; they are previously confirmed defects that were missing from the X register. They are restored here as X64–X73.
+
+## X64 — Update ZIP extraction safety is not explicit enough for static security proof
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+UpdatePackageStager performs substantial containment defense through RootPathRules.ResolveContainedPath(), including a second resolution immediately before file mutation. The historical CodeQL Zip Slip finding nevertheless remained because the extraction boundary sends an archive-derived name through a custom sanitizer that the analyzer does not recognize as an explicit local containment proof.
+
+This finding is a security-proof/quality defect, not a claim that a working Zip Slip exploit has been demonstrated.
+
+Relevant path:
+
+- src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs
+
+### Root cause / failure path
+
+Archive entry name → normalization → custom ResolveContainedPath helper → FileStream.
+
+The runtime helper can be strong while the security-analysis dataflow still sees archive-controlled path material reaching a file sink without a recognizable explicit canonical-root check at the extraction boundary. That leaves the source difficult to prove for both static analysis and future maintainers.
+
+### Penyelesaian
+
+At the extraction boundary, before creating any directory or file:
+
+1. canonicalize the operation staging root;
+2. derive the candidate destination from the archive entry;
+3. call Path.GetFullPath on the candidate;
+4. perform an explicit boundary-safe root-containment check using the shared RootPathRules authority;
+5. reject rooted, traversal, drive/colon, invalid, or escaping entries;
+6. keep ResolveContainedPath and reparse-point validation as defense-in-depth;
+7. perform the containment proof again immediately before file creation after parent-directory creation.
+
+Do not weaken the current reparse-point protections merely to silence CodeQL.
+
+### Penanggulangan
+
+- Keep CodeQL/security workflow as a required security gate for extraction changes.
+- Add malicious ZIP fixtures: ../, ..\, absolute path, sibling-prefix escape, alternate separators, duplicate canonical name, reparse redirection, and path normalization variants.
+- Add valid nested-file and valid directory-entry fixtures.
+- Any future archive extraction implementation must use the same shared containment authority.
+
+### Verification
+
+The security query must no longer report the extraction sink, and all malicious fixtures must fail closed while a canonical release ZIP stages successfully.
+
+---
+
+## X65 — Canonical release ZIP directory entries are rejected by the updater
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+scripts/package-win-x64.ps1 creates the release ZIP using Compress-Archive over InstallRoot. The package contains directory structure such as workers/, tools/, LICENSES/, and other nested directories. UpdatePackageStager currently rejects every archive entry whose normalized name ends with /.
+
+Relevant paths:
+
+- scripts/package-win-x64.ps1
+- src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs
+
+The updater can therefore reject a ZIP produced by the canonical packager.
+
+### Root cause / failure path
+
+Packager models directory entries as legitimate ZIP structure. Stager models every ZIP entry as a file and treats a trailing slash as unsafe.
+
+canonical package → valid directory entry → normalized.EndsWith('/') → rejection.
+
+### Penyelesaian
+
+Teach the stager to distinguish safe directory entries from file entries.
+
+For a directory entry:
+
+- validate the canonical contained path exactly as strictly as a file;
+- require directory-entry semantics (no file payload authority);
+- create/recognize the directory safely;
+- do not add the directory to file-membership/hash validation;
+- reject file/directory canonical-path collisions;
+- reject unsafe/traversing/rooted/reparse escapes.
+
+For a file entry, retain all current size, compression-ratio, duplicate-name, containment, and CreateNew rules.
+
+### Penanggulangan
+
+The exact ZIP emitted by package-win-x64.ps1 must be fed into UpdatePackageStager during release verification. Include nested empty/non-empty directories and malicious directory names.
+
+### Verification
+
+Canonical ZIP → stager → manifest validation must PASS without special repacking, while unsafe directory entries remain rejected.
+
+---
+
+## X66 — Cancellation terminal projection is delayed until recovery polling on cancellation paths
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+JobScheduler.CompleteAttemptAsync invokes OnJobCompleted for success and terminal failure, but the JobRetryOutcome.Cancelled branch increments cancellation metrics/finalizes and exits without invoking the completion observer. Idle cancellation also transitions durable job state directly. Stage2CompletionHandler reconciliation is therefore able to depend on the bounded OnReconciled recovery poll, whose interval is 750 ms.
+
+Relevant paths:
+
+- src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs
+- src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs
+- src/Neuterradise.Runtime/SystemServices/Lifecycle/ProductionRuntimeRegistry.cs
+
+A job can already be CANCELLED while dependent capability/readiness projection is still stale.
+
+### Root cause / failure path
+
+Durable terminal cancellation and semantic terminal projection are separate events. Cancellation paths do not publish the same immediate closure signal as other terminal outcomes.
+
+### Penyelesaian
+
+After a cancellation state is durably committed:
+
+- immediately invoke an idempotent terminal-projection/closure path;
+- close impossible dependents;
+- project affected capability states;
+- re-evaluate affected ImportUnit readiness;
+- raise scheduler/status wake signals.
+
+Keep the 750 ms reconciliation loop only as a recovery safety net for missed signals, restart reconciliation, or older persisted states.
+
+The immediate path must be idempotent so observer failure/retry cannot corrupt terminal state.
+
+### Penanggulangan
+
+Test idle cancellation, running cancellation, FaceAnalysis cancellation, dependent jobs, reused/shared assets, restart, and duplicate reconciliation. The capability/readiness state must converge without waiting for the polling interval.
+
+### Verification
+
+Observe durable job cancellation and its dependent/capability projection in the same control flow or immediate signal-driven turn; a 750 ms timer must not be required for normal correctness.
+
+---
+
+## X67 — Single-click Media Detail is intentionally delayed by the Windows double-click timeout
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+MediaActivationArbiter defers onSingleClick with Task.Delay(_doubleClickTimeMs). The value comes from GetDoubleClickTime() and falls back to 500 ms. This directly conflicts with the product interaction contract that a single click opens media preview/detail promptly while double click opens the media in the default external application.
+
+Relevant path:
+
+- src/Neuterradise.Runtime/Media/MediaGridViewModel.cs
+
+### Root cause / failure path
+
+The implementation treats single-click action as something that must be withheld until it can prove a double click will not happen. The single-click action is non-destructive and does not require that arbitration.
+
+### Penyelesaian
+
+Make the first unmodified left click immediately perform the internal selection/detail action.
+
+Double click must then independently:
+
+- preserve the already-valid internal selection/detail state;
+- invoke the default-app action exactly once;
+- not require retracting the first click;
+- preserve modifier/selection semantics;
+- keep route-generation, query-generation, scroll, and disposal fencing.
+
+Do not replace the delay with a smaller arbitrary delay.
+
+### Penanggulangan
+
+Interaction tests:
+
+- first click opens internal detail without waiting for GetDoubleClickTime;
+- double click opens default app exactly once;
+- modified clicks retain selection behavior;
+- scrolling/navigation/disposal cannot trigger a stale action;
+- keyboard Enter remains consistent with the internal-open contract.
+
+### Verification
+
+The first-click internal action occurs before the system double-click timeout expires, and the second click still produces exactly one external-open action.
+
+---
+
+## X68 — Shell work/status projection is fixed-polling at 750 ms
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+ProductionRuntimeRegistry.PublishStatusLoopAsync reads ShellWorkSnapshot on a PeriodicTimer of 750 ms. Durable scheduler/import state can therefore be correct while the visible shell counter/status remains stale for most of a second.
+
+Relevant path:
+
+- src/Neuterradise.Runtime/SystemServices/Lifecycle/ProductionRuntimeRegistry.cs
+
+### Root cause / failure path
+
+Visible projection refresh is timer-driven instead of change-driven. The scheduler already has wake/invalidation concepts, but shell status does not consume a direct durable-state change signal.
+
+### Penyelesaian
+
+Introduce an event-driven/coalesced status invalidation path.
+
+- Scheduler/job/import state changes raise a lightweight wake/invalidation.
+- The shell snapshot read is coalesced so bursts do not produce unbounded DB reads.
+- Initial publication remains explicit.
+- A bounded periodic timer may remain only as a missed-signal/recovery fallback.
+- Cancellation/disposal must stop subscriptions deterministically.
+
+### Penanggulangan
+
+Test enqueue, start, progress/terminal state, cancel, retry, pause/resume, and import publication. Visible state must refresh from the signal path, not by sleeping until the next poll.
+
+### Verification
+
+A durable status change becomes observable without waiting 750 ms; disabling the fallback timer must not break the normal signal-driven path.
+
+---
+
+## X69 — Shared reused-asset Stage-2 work has no durable per-ImportUnit scheduling-interest model
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+Stage-2 work is Asset-owned and reused assets can be shared by multiple ImportUnits. JobWrites.SetImportUnitPriorityInTransactionAsync scopes focused/prioritized jobs only through import_items.candidate_asset_id. A unit waiting on reused_asset_id work can therefore remain dependent on a shared background-priority job even after the user prioritizes that import.
+
+Relevant paths:
+
+- src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs
+- src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs
+- src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs
+
+### Root cause / failure path
+
+The repository has Asset-owned shared jobs but no durable many-to-many concept expressing that multiple ImportUnits currently depend on or are interested in the same shared work.
+
+Adding candidate_asset_id OR reused_asset_id blindly to cancellation SQL would be unsafe because one import must not cancel a shared job still needed by another import.
+
+### Penyelesaian
+
+Introduce one canonical shared-work interest/dependency authority.
+
+It must support:
+
+- ImportUnit → effective asset → shared job interest;
+- focused-import priority aggregation without changing job ownership;
+- per-unit progress/accounting for reused work;
+- interest removal when a unit completes/cancels;
+- shared job cancellation only when no live consumer remains and the job is otherwise cancel-safe;
+- recovery/reconstruction after restart.
+
+Priority policy must define how multiple consumers combine their desired priority deterministically.
+
+### Penanggulangan
+
+Two-or-more ImportUnits sharing the same reused asset:
+
+- prioritize A while B remains background;
+- prioritize B later;
+- cancel A while B still needs the job;
+- complete A while B remains;
+- restart with both interests persisted;
+- shared job failure/terminal projection reaches both units correctly.
+
+### Verification
+
+Focused import priority affects the shared work it actually waits on, without allowing one consumer to cancel or corrupt another consumer's job.
+
+---
+
+## X70 — Clipboard retry blocks the UI thread for up to approximately 200 ms
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+Win32Clipboard.SetText retries OpenClipboard up to ten times and uses Thread.Sleep(20) between attempts. UI commands that call it synchronously can freeze the dispatcher for roughly 200 ms when another process holds the clipboard.
+
+Relevant path:
+
+- src/Neuterradise.Runtime/SystemServices/Win32Clipboard.cs
+
+### Root cause / failure path
+
+A bounded retry policy is implemented as synchronous sleeping on the caller thread, and UI commands are allowed to call the synchronous API directly.
+
+### Penyelesaian
+
+Provide a bounded non-blocking clipboard operation.
+
+- no Thread.Sleep on the dispatcher;
+- use asynchronous delay/backoff or an isolated worker appropriate to the Win32 clipboard contract;
+- preserve a deterministic retry limit;
+- support cancellation/route lifetime;
+- surface final clipboard-busy failure without freezing the UI;
+- serialize concurrent application clipboard writes if necessary.
+
+### Penanggulangan
+
+Simulate a locked clipboard while invoking Copy Path/Filename repeatedly. Verify dispatcher responsiveness, bounded completion, cancellation, and final error behavior.
+
+### Verification
+
+No UI-thread sleep occurs and the UI remains responsive for the full retry window.
+
+---
+
+## X71 — FFmpeg build artifact availability depends on an external upstream release
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+package-win-x64.ps1 pins the FFmpeg archive name, release tag, SHA-256, source revision, and licenses, which protects byte identity. The canonical build still depends on the long-term availability of an external BtbN GitHub release URL when the local build cache is empty.
+
+Relevant path:
+
+- scripts/package-win-x64.ps1
+
+### Root cause / failure path
+
+Integrity is pinned, but artifact availability is not under the project's durable release authority. A deleted/retired/rate-limited upstream asset can make a clean canonical build impossible even though the expected bytes are known.
+
+### Penyelesaian
+
+Establish a durable approved artifact source for the exact pinned FFmpeg archive, such as a project-controlled release asset or immutable artifact store permitted by licensing.
+
+Requirements:
+
+- exact existing SHA-256 remains authoritative;
+- provenance and upstream source commit remain recorded;
+- licenses remain packaged;
+- local cache remains usable;
+- fallback ordering is deterministic;
+- no automatic substitution with a newer FFmpeg build.
+
+### Penanggulangan
+
+Clean-cache build test using the durable source; upstream-unavailable simulation; hash mismatch fail-closed; provenance manifest comparison.
+
+### Verification
+
+The exact pinned FFmpeg bytes remain reproducibly obtainable from an authority controlled by the release process even if the original external URL is unavailable.
+
+---
+
+## X72 — REUSE authority is not revalidated at the commit boundary
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+ImportCommitCoordinator collects items whose DuplicateDecision is Reuse, retires their candidate assets, records ReusedAssetId, marks cleanup LibraryCommitted, and later attempts LinkReusedMediaAsync. At that commit phase it does not first prove that the reused asset is still ACTIVE/non-trashed and still represents the exact duplicate authority reviewed for the candidate. Link failures are logged as warnings.
+
+Relevant path:
+
+- src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs
+
+### Root cause / failure path
+
+The REUSE decision is validated earlier, but the commit assumes that authority is still valid after time has passed and other lifecycle operations may have changed the reused asset.
+
+review exact duplicate → reused asset changes/retires/trashes → commit retires candidate → reuse linking/authority is no longer valid.
+
+### Penyelesaian
+
+Immediately before DomainAuthorityCommitted, transactionally revalidate every reuse decision:
+
+- reused asset exists;
+- state is ACTIVE and not trashed;
+- content identity still matches the reviewed candidate using the canonical exact-duplicate authority;
+- required package/component identity is complete where applicable;
+- ownership/relation policy still permits the intended destination semantics.
+
+If revalidation fails:
+
+- do not retire the candidate as successfully reused;
+- do not mark the item LibraryCommitted;
+- block/recompute the duplicate decision deterministically.
+
+A required reuse association failure must not be reduced to a warning if it invalidates the commit contract.
+
+### Penanggulangan
+
+Race tests: trash/retire/replace/reassign the reused asset between Verify and commit; package component changes; row-version conflicts; restart at the revalidation boundary.
+
+### Verification
+
+A stale REUSE decision can never retire the only valid candidate and then silently commit against an invalid reused authority.
+
+---
+
+## X73 — Cancelling one import can trash an asset currently reused by another import
+
+**Status:** OPEN-IMPLEMENTATION
+
+### Temuan
+
+ImportCancellationSettlement.ReadExclusiveActiveAssetIdsAsync selects ACTIVE candidate assets for the cancelled unit and excludes reused_asset_id only from import_items belonging to that same unit. It does not prove that another live ImportUnit currently references/reuses that asset.
+
+Relevant path:
+
+- src/Neuterradise.Runtime/Import/ImportCancellationSettlement.cs
+
+A concrete failure is:
+
+Import A creates Asset X → Import B reuses X → A is cancelled → A's exclusivity query sees no same-unit reuse → X is considered exclusive → cancellation settlement attempts to trash X while B still depends on it.
+
+### Root cause / failure path
+
+Asset lifetime/exclusivity is inferred from one ImportUnit's rows instead of from all live consumers and durable library relations.
+
+### Penyelesaian
+
+Define canonical asset-retirement eligibility for cancellation.
+
+An asset created by the cancelled unit may be retired/trashed only when all of the following are proven transactionally:
+
+- no other live ImportUnit has candidate/reuse/effective-asset interest requiring it;
+- no published/active Profile relation requires it;
+- no active shared-work consumer depends on it;
+- no lifecycle operation has transferred durable authority;
+- the asset is still eligible for rollback under the cancelled unit's publication delta.
+
+Integrate this authority with X69's shared-work interest model. Do not fix this by merely changing a same-unit subquery to candidate OR reused.
+
+### Penanggulangan
+
+Concurrent import matrix:
+
+- A creates X, B reuses X, cancel A;
+- cancel B first;
+- publish B then cancel A;
+- pause/restart both;
+- three consumers;
+- consumer appears during cancellation settlement;
+- relation/owner changes during rollback.
+
+### Verification
+
+Cancelling one ImportUnit can never retire/trash an asset that another live import or active library relation still requires.
+
+---
+
+# 19. Historical current-audit crosswalk
+
+The pre-stage deep-source register D38–D57 is preserved below so no confirmed finding can disappear because the audit numbering scheme changed.
+
+| Historical ID | Canonical X ID | Finding |
+| --- | --- | --- |
+| D38 | X64 | CodeQL Zip Slip / explicit extraction containment proof |
+| D39 | X25 | Optional capability incorrectly gates import readiness |
+| D40 | X65 | Canonical ZIP directory-entry incompatibility |
+| D41 | X43 | NuGet global-packages root mismatch |
+| D42 | X66 | Cancellation terminal projection delay |
+| D43 | X67 | Single-click delayed by double-click timeout |
+| D44 | X68 | Shell status fixed polling |
+| D45 | X69 | Shared/reused Stage-2 per-import interest missing |
+| D46 | X70 | Clipboard UI blocking retry |
+| D47 | X50 | Exact .NET SDK / deterministic toolchain authority |
+| D48 | X71 | FFmpeg artifact durability |
+| D49 | X56–X61 | Build/package/runtime executable evidence gap |
+| D50 | X45 | Updater publisher authenticity |
+| D51 | X02 | Updater staging-to-handoff TOCTOU |
+| D52 | X10 | MOVE source pathname/object deletion race |
+| D53 | X06 | Asset Trash with APPEARS/MANUAL |
+| D54 | X72 | REUSE authority commit-time revalidation |
+| D55 | X73 | Cross-import cancellation can trash shared reused asset |
+| D56 | X01 | VIDEO Cover rejected by CriticalIntegrityGate |
+| D57 | X07–X08 | NORMAL Profile Trash and paired restart/restore lifecycle |
+
+This crosswalk is normative. Historical D IDs are aliases only; implementation and closure tracking use X IDs.
+
+---
+
+# 20. Frozen-tree coverage certification — 388/388 baseline files
+
+The frozen SHA 3f5f7c861fd773336182e4c61871e95c8761a549 contains exactly **388 files**. The current tree before this documentation series had zero file differences from that SHA. The only extra current file is this audit document.
+
+Every baseline area below has an owning audit stage. A row without a unique finding does not mean it was skipped; it means the area was traced and did not produce a separate confirmed defect beyond the listed cross-domain findings.
+
+| Baseline area | Files | Owning coverage |
+| --- | ---: | --- |
+| Root solution/build scaffolding | 5 | Stages 1, 9, 11, 12; X50, X56–X61 |
+| .github/workflows | 2 | Stages 1, 9, 11; X46, X56 |
+| scripts | 3 | Stages 1, 9, 11, 12; X43–X50, X65, X71 |
+| Neuterradise.App root/platform/assets/UI | 28 | Stages 1, 8, 10, 11; X38–X42, X67–X70 |
+| Profiling.Protocol | 4 | Stages 1, 6, 10, 11; X30–X36 |
+| Profiling.Worker | 16 | Stages 1, 6, 10, 11; X03, X30–X36, X59 |
+| Runtime/Activity | 3 | Stages 1, 8, 10, 11; no unique additional finding |
+| Runtime/Design | 16 | Stages 1, 8, 10, 11; no unique additional finding |
+| Runtime/Faces | 8 | Stages 1, 6, 7, 8, 10, 11; X30–X36 |
+| Runtime/Gallery | 2 | Stages 1, 8, 10, 11; X38–X42 where applicable |
+| Runtime/Home | 1 | Stages 1, 8, 10, 11; no unique additional finding |
+| Runtime/Import | 38 | Stages 1, 4, 5, 10, 11, 12; X09–X26, X25, X69, X72–X73 |
+| Runtime/Localization | 4 | Stages 1, 8, 10, 11; X40 |
+| Runtime/Maintenance | 10 | Stages 1, 3, 4, 7, 10, 11; X13 and lifecycle integrity coverage |
+| Runtime/Media | 24 | Stages 1, 4, 8, 10, 11, 12; X09–X18, X42, X67 |
+| Runtime root project/global usings | 2 | Stages 1, 9, 11; build/toolchain coverage |
+| Runtime/Presentation | 12 | Stages 1, 8, 10, 11; presentation install/runtime traced; no unique additional finding |
+| Runtime/Profiles | 10 | Stages 1, 2, 3, 7, 8, 10, 11; X01, X04–X08, X37–X42 |
+| Runtime/RelatedProfiles | 5 | Stages 1, 6, 7, 8, 10, 11; related-evidence lifecycle traced |
+| Runtime/Settings | 4 | Stages 1, 8, 10, 11; X39–X41 |
+| Runtime/Shell | 15 | Stages 1, 8, 10, 11, 12; X38–X42, X53–X55, X68 |
+| SystemServices/Cache | 15 | Stages 1, 4, 6, 8, 10, 11; cache/resource lifetime traced |
+| SystemServices/Database | 49 | Stages 1, 3–7, 10, 11; X06–X08, X19–X26, X37, X51, X69, X72–X73 |
+| SystemServices/Diagnostics | 2 | Stages 1, 10, 11; runtime evidence support |
+| SystemServices/Jobs | 27 | Stages 1, 5, 6, 10, 11, 12; X19–X26, X30–X36, X51, X66, X69 |
+| SystemServices/Lifecycle | 9 | Stages 1, 2, 5, 10, 11, 12; X01, X22–X23, X52–X55, X68 |
+| SystemServices/MediaTools | 4 | Stages 1, 4, 9, 11, 12; X44, X57, X71 |
+| SystemServices/Operations | 6 | Stages 1, 3–5, 7, 10, 11; idempotency/operation authority coverage |
+| SystemServices/ProductIdentity.cs | 1 | Stages 1, 9, 11; X49–X50 |
+| SystemServices/Recovery | 8 | Stages 1, 3–5, 7, 9–11; X08, X23, X47–X48, X51–X55 |
+| SystemServices/Resources | 2 | Stages 1, 5, 8, 10, 11; resource-governor/lifetime coverage |
+| SystemServices/Storage | 23 | Stages 1, 4, 7, 9–11; X04–X18, X37, X52 |
+| SystemServices/TimeAndIds | 2 | Stages 1, 3, 5, 10; identity/time durability support |
+| SystemServices/UiPrimitives.cs | 1 | Stages 1, 8, 10; UI primitive coverage |
+| SystemServices/Updates | 14 | Stages 1, 9–12; X02, X18, X43–X50, X55, X60, X64–X65 |
+| SystemServices/Win32Clipboard.cs | 1 | Stages 1, 8, 12; X70 |
+| Runtime/Trash | 9 | Stages 1, 3, 7, 10, 11; X06–X08, X37 |
+| Neuterradise.Updater | 3 | Stages 1, 9–11; X02, X45–X49, X55, X60 |
+
+**Total: 388 / 388 baseline files owned by the audit map.**
+
+## 20.1 Cross-cutting failure-mode coverage
+
+Coverage is not based only on directory ownership. The audit explicitly traced these failure dimensions end-to-end:
+
+| Failure dimension | Owning findings/stages |
+| --- | --- |
+| DB trigger/FK invariant conflict | X06–X08, X37; Stages 3 and 7 |
+| crash between physical I/O and DB checkpoint | X08–X12, X37, X47, X51–X55 |
+| cancellation/pause/shutdown intent races | X19–X26, X51–X55, X66, X69, X73, X66, X69, X73 |
+| stale writer / CAS / terminal-state escape | X21, X24, X51 |
+| shared asset / cross-import lifetime | X15, X69, X72–X73 |
+| path traversal / containment / reparse | X18, X64–X65 |
+| destructive source deletion identity | X10–X11 |
+| package/component completeness | X11, X13–X17, X44, X65 |
+| worker IPC/model/native runtime | X03, X30–X36, X59 |
+| UI dispatcher / stale callback / perceived latency | X38–X42, X67–X70 |
+| updater trust / TOCTOU / recovery | X02, X45–X49, X55, X60, X64–X65 |
+| build/dependency reproducibility | X43–X44, X46, X50, X56–X61, X71 |
+| cold/warm startup / controlled shutdown | X22–X23, X52–X55, X58, X61 |
+| executable evidence versus static inference | X56–X61 |
+
+## 20.2 Baseline re-audit freeze
+
+For the unchanged frozen source baseline, this coverage certification is the closure mechanism.
+
+Do **not** schedule another full source audit of 3f5f7c8 or its net-identical source tree merely to seek reassurance. Implementation work must proceed against this ledger. During remediation:
+
+- a manifestation of an existing root cause is attached to the existing X finding;
+- a regression caused by a fix is treated as a failed verification of that finding/cluster;
+- only a genuinely distinct root cause outside X01–X73 may allocate X74+;
+- executable verification is mandatory but is not another broad source audit.
+
+No static audit can mathematically prove that software contains zero bugs. The concrete closure claim here is narrower and testable: **there is no intentionally unowned repository domain, no lost confirmed current-audit finding, and no omitted planned failure-mode class in the Stage 1–12 coverage map.**
+
+---
+
+# 21. Dependency clusters
 
 Findings must not be fixed as unrelated tickets when they share one invariant.
 
@@ -2222,7 +2821,7 @@ Shared contract:
 
 ## Cluster E — UI persistence and lifetime
 
-X38–X42
+X38–X42, X67–X70
 
 Shared contract:
 
@@ -2230,7 +2829,7 @@ background read/compute → durable mutation where required → UI dispatcher co
 
 ## Cluster F — Release trust and updater lifecycle
 
-X02, X18, X43–X50, X55, X57, X60
+X02, X18, X43–X50, X55, X57, X60, X64–X65, X71
 
 Shared contract:
 
@@ -2238,7 +2837,7 @@ signed/pinned authority → package completeness → compatibility → staged co
 
 ---
 
-# 19. Direct remediation order
+# 22. Direct remediation order
 
 The following order minimizes rework and prevents fixing symptoms before their authority layer.
 
@@ -2263,7 +2862,10 @@ Target:
 - X43;
 - X44;
 - X49;
-- X50.
+- X50;
+- X64;
+- X65;
+- X71.
 
 Reason: later fixes depend on stable appearance, deployment, model, path-job, package, compatibility, and build authorities.
 
@@ -2273,7 +2875,10 @@ Do not start broad runtime acceptance until these authorities are coherent.
 
 Target:
 
-- X09–X18.
+- X09–X18;
+- X69;
+- X72;
+- X73.
 
 Implement as a coordinated storage/import pass, not ten isolated local patches.
 
@@ -2306,7 +2911,10 @@ Acceptance:
 Target:
 
 - X19–X26;
-- X51–X55.
+- X51–X55;
+- X66;
+- X69;
+- X73.
 
 Required first-class concepts:
 
@@ -2346,7 +2954,10 @@ Acceptance:
 
 Target:
 
-- X38–X42.
+- X38–X42;
+- X67;
+- X68;
+- X70.
 
 Acceptance:
 
@@ -2359,7 +2970,7 @@ Acceptance:
 
 Target:
 
-- remaining X45–X48 plus integration with X02/X43–X50/X55.
+- remaining X45–X48 plus integration with X02/X43–X50/X55/X64–X65/X71.
 
 Acceptance:
 
@@ -2395,7 +3006,7 @@ A build PASS does not close runtime findings.
 
 ---
 
-# 20. Implementation discipline
+# 23. Implementation discipline
 
 For each source finding:
 
@@ -2416,7 +3027,7 @@ Repository operating rules from AGENTS.md remain authoritative for canonical bui
 
 ---
 
-# 21. Finding closure record format
+# 24. Finding closure record format
 
 When implementation begins, each finding entry should append a closure record using this exact structure:
 
@@ -2434,11 +3045,11 @@ Never replace the original Temuan/Penyelesaian/Penanggulangan text with only the
 
 ---
 
-# 22. Final acceptance criteria
+# 25. Final acceptance criteria
 
 NeuTerradise may be described as remediated against this Deep Audit only when all of the following are true:
 
-1. X01–X61 are SOURCE-CLOSED or explicitly superseded by a documented X64+ finding with evidence.
+1. All remediation/evidence findings X01–X61 and X64–X73 are SOURCE-CLOSED or explicitly superseded by a documented X74+ finding with evidence.
 2. X62–X63 remain CLOSED-DOC audit-control records.
 3. X27–X29 remain RESERVED.
 4. All DB trigger/FK invariants remain active.
@@ -2463,12 +3074,17 @@ Until then:
 
 ---
 
-# 23. Final audit decision
+# 26. Final audit decision
 
-The source baseline has been audited through all twelve planned stages. Stage 12 found no new uncovered source domain requiring a Stage 13. Its new findings are audit-control defects X62 and X63, both resolved at the documentation level by freezing the canonical ledger.
+The source baseline has been audited through all twelve planned stages. The final coverage certification did not reveal a new repository domain requiring a Stage 13, but it did reveal a ledger-consolidation defect: ten already-confirmed current-audit findings from historical D38–D57 had not been represented explicitly in the X register. Those findings are now restored canonically as X64–X73, and the D38–D57 crosswalk is frozen in this document.
+
+The frozen baseline is therefore covered at two levels:
+
+1. **388/388 file ownership** across Stage 1–12; and
+2. **failure-mode ownership** across database invariants, filesystem crash boundaries, concurrency, shared assets, UI threading/lifetime, profiling IPC, updater trust/recovery, build reproducibility, and executable runtime evidence.
 
 The correct next action is implementation against this document, not another full audit of the same unchanged source tree.
 
-If implementation reveals a genuinely new defect outside the root cause of X01–X63, allocate X64 and continue monotonically. If the observation is merely another manifestation of an existing root cause, attach it to the existing finding instead of creating a duplicate.
+If implementation reveals a genuinely distinct defect outside the root causes of X01–X73, allocate X74 and continue monotonically. If an observation is another manifestation of an existing root cause, attach it to that existing finding instead of creating a duplicate.
 
-**Canonical conclusion: Deep Audit Stage 1–12 CLOSED-DOC; remediation and executable verification remain open.**
+**Canonical conclusion: Deep Audit Stage 1–12 CLOSED-DOC with final coverage certification; remediation and executable verification remain open. Full source re-audit of the unchanged frozen baseline is not required.**
