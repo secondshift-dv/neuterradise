@@ -241,11 +241,11 @@ Rules:
 | X26 | `JobScheduler.cs` — scheduler shutdown intent/catch ordering; `JobLeaseStore.cs` and `JobWrites.cs` — RUNNING→PENDING shutdown settlement; `StorageJobResultMapper.cs` and `HashAssetJobHandler.cs` remain cancellation-result producers normalized by the scheduler. |
 | X30 | `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — serialized read loop, `HandleAnalyzeFacesAsync`, and `CancelRequest`. |
 | X31 | `src/Neuterradise.Profiling.Worker/FaceAnalysis/FaceAnalyzer.cs` — `ExpectedSha256` analysis path; `src/Neuterradise.Profiling.Worker/FaceAnalysis/OpenCvFaceImageSource.cs` — bytes decoded for inference. |
-| X32 | `src/Neuterradise.Runtime/Faces/IdentityBankProvider.cs` — cached embedding spaces/`InvalidateSpace`; `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs` — sample mutations. |
-| X33 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — persisted detector/embedding provenance; `src/Neuterradise.Runtime/Faces/EmbeddingSpaceKey.cs` and database Face writes define embedding authority. |
+| X32 | `src/Neuterradise.Runtime/Faces/IdentityBankProvider.cs` — catalog-scoped provider registry, per-space generation and invalidation; `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs` and `src/Neuterradise.Runtime/SystemServices/Database/Writes/FaceWrites.cs` — committed sample mutations and post-commit invalidation. |
+| X33 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — YuNet detector persistence; `src/Neuterradise.Runtime/Faces/EmbeddingSpaceKey.cs`, `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs`, `src/Neuterradise.Runtime/SystemServices/Database/Writes/FaceWrites.cs`, and migration `0016_r5_face_embedding_provenance.sql` — SFace embedding provenance authority. |
 | X34 | `src/Neuterradise.Runtime/SystemServices/Jobs/ProfilingWorkerProcessHost.cs` — `ConsecutiveFailures`, Ready handshake, restart breaker. |
-| X35 | `src/Neuterradise.Profiling.Protocol/ProfilingProtocol.cs` — frame maximum; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — `BuildIdentityIndexRequest` producer; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — consumer. |
-| X36 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — Build/Match/ReleaseIndex lifetime; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — ReleaseIndex consumer. |
+| X35 | `src/Neuterradise.Profiling.Protocol/ProfilingProtocol.cs` / `ProfilingContracts.cs` — v3 frame/chunk contract; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — encoded-size-aware producer; `src/Neuterradise.Profiling.Worker/IdentityMatching/IdentityIndexCache.cs` and dispatcher — ordered chunk consumer/final publisher. |
+| X36 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — Build/Match/finally cleanup lifetime; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` and `IdentityIndexCache.cs` — acknowledged ReleaseIndex plus loaded/pending invalidation. |
 | X37 | `src/Neuterradise.Runtime/Trash/PurgeExecutor.cs` and `src/Neuterradise.Runtime/Trash/PurgePlan.cs` — purge dependency/preflight/delete authority; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0003_import_assignment_review.sql` — assignment-cluster FK schema. |
 | X38 | `src/Neuterradise.Runtime/Profiles/ProfileDetailViewModel.cs` — `LoadAsync`, queued `UiDispatch.Run`, final `ShowReady`. |
 | X39 | `src/Neuterradise.Runtime/Settings/SettingsViewModel.cs` — `InitializeAsync` and UI-bound property/collection mutation after background reads. |
@@ -1788,7 +1788,7 @@ Rules:
 
 ## X30 — CancelRequest cannot interrupt active worker inference promptly
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1817,11 +1817,23 @@ Cancellation latency test during real/slow YuNet/SFace inference. Cancel must be
 
 Worker receives CancelRequest while AnalyzeFaces is still active and returns deterministic CANCELLED.
 
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `2c1ebd71abe0e7b65055d6d54709dae34b6c72e3` (foundation `36c0ef512a5a347033a28025bf6641f15a2fbb24`)  
+**Changed paths:** `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs`.  
+**Traceability checked:** app-side `ProfilingWorkerConnection` cancellation envelope → Worker receive loop → tracked per-request CTS/task → bounded long-running request slot → terminal response → shutdown drain.  
+**Root-cause correction:** long-running AnalyzeFaces/ExtractStills work no longer monopolizes the transport receive loop. AnalyzeFaces physical inference is separately observed so `CancelRequest` can publish deterministic `CANCELLED` immediately even while one native OpenCV call is still unwinding; the tracked slot remains occupied until that native task terminates, preventing cancellation from creating hidden concurrency oversubscription.  
+**Regression guard:** duplicate request IDs fail closed; long-running work is bounded; shutdown cancels and drains tracked tasks; response writes remain serialized by the transport.  
+**Verification result:** SOURCE-TRACE VERIFIED. No app/test/native fault-injection execution was performed under the current execution restriction.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 must measure cancellation latency during real YuNet/SFace native inference and forced shutdown.
+
 ---
 
 ## X31 — ExpectedSha256 is carried to the worker but not proven against analyzed bytes
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1849,11 +1861,23 @@ Missing, changed, same-name replacement, hash mismatch, unreadable, corrupt imag
 
 No hash mismatch may produce Available success.
 
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `36c0ef512a5a347033a28025bf6641f15a2fbb24`  
+**Changed paths:** `src/Neuterradise.Profiling.Worker/FaceAnalysis/FaceAnalyzer.cs`; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs`; host error classification completed in `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` at `fd4a5dd7a1e647cb6a646906fffc431d4228691c`.  
+**Traceability checked:** authoritative Asset SHA → FaceAnalysisRequest.ExpectedSha256 → worker file-open/read lease → incremental SHA-256 verification → decode/inference lifetime → typed protocol error → job failure classification.  
+**Root-cause correction:** the worker opens the exact input with write/delete sharing denied, hashes the bytes before model creation/inference, keeps that lease alive across decode/inference, and rejects changed/missing/unreadable input instead of projecting it as an Available zero-face result.  
+**Regression guard:** malformed expected hashes, missing paths, unreadable input and SHA mismatch are distinct from genuine zero-face analysis; mismatch is classified as ContentMismatch by the host.  
+**Verification result:** SOURCE-TRACE VERIFIED. The missing/changed/corrupt/valid-zero-face executable matrix remains R8.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 byte-replacement and corrupt-input execution evidence.
+
 ---
 
 ## X32 — IdentityBankProvider cache can remain stale after face confirmation changes samples
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1877,11 +1901,23 @@ Confirm, change confirmation, reject/remove sample, then immediately request sug
 
 Identity bank reflects the committed sample set on the next read.
 
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `f2a6d5bf858fef03cd594d193f02f1325c7d9d9a` (shared-provider/post-commit foundation `fd4a5dd7a1e647cb6a646906fffc431d4228691c`)  
+**Changed paths:** `src/Neuterradise.Runtime/Faces/IdentityBankProvider.cs`; `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/FaceWrites.cs`.  
+**Traceability checked:** committed identity_samples mutation → exact EmbeddingSpaceKey → all live IdentityBankProvider instances bound to the same CatalogDb → per-space generation invalidation → next GetSpaceAsync reload.  
+**Root-cause correction:** cache invalidation now occurs only after successful transaction commit. Providers registered against the live CatalogDb are invalidated as one authority, and direct FaceWrites sample insertion uses the same post-commit invalidation path; pre-existing generation fencing prevents an in-flight stale load from being re-cached after invalidation.  
+**Regression guard:** confirm/reassign/remove-and-recreate and direct sample insertion cannot leave the committed embedding space silently cached as the previous bank.  
+**Verification result:** SOURCE-TRACE VERIFIED. Immediate post-decision suggestion refresh execution remains R8.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 cache-race and immediate-refresh evidence.
+
 ---
 
 ## X33 — SFace embedding is persisted with YuNet model provenance
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1910,11 +1946,23 @@ Schema and persistence assertions: every stored embedding’s model/version must
 
 Persist one face and inspect detector and embedding provenance independently.
 
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `fd4a5dd7a1e647cb6a646906fffc431d4228691c`  
+**Changed paths:** `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Writes/FaceWrites.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0016_r5_face_embedding_provenance.sql`.  
+**Traceability checked:** FaceAnalysisJobHandler detector persistence → face_detections YuNet model fields → canonical SFace EmbeddingSpaceKey → identity_samples model provenance → IdentityBankProvider load/matching.  
+**Root-cause correction:** face_detections.model_id/model_version remain detector provenance, while every embedding-derived identity sample derives model_id/model_version from its canonical SFace embedding-space key. Migration 0016 repairs existing sample rows and adds database guards against future detector/embedding provenance collapse.  
+**Regression guard:** FaceWrites validates sample model provenance against EmbeddingSpaceKey; face confirmation never copies YuNet detector fields into an SFace identity sample.  
+**Verification result:** SOURCE-TRACE VERIFIED. Migration execution plus persisted detector-vs-embedding inspection remains R8.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 schema migration and persistence inspection.
+
 ---
 
 ## X34 — Worker crash breaker can restart indefinitely across successful handshakes
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1938,11 +1986,23 @@ Simulate Ready→crash repeatedly faster than the stability window. Host must re
 
 No infinite worker restart loop.
 
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `fd4a5dd7a1e647cb6a646906fffc431d4228691c`  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Jobs/ProfilingWorkerProcessHost.cs`.  
+**Traceability checked:** StartAsync handshake → Ready timestamp → transport crash/NotifyCrash → restart counter → NeedsAttention threshold → controlled Shutdown reset.  
+**Root-cause correction:** a successful handshake no longer resets the failure budget. The budget resets only after the previous Ready period survived the defined healthy stability window; repeated Ready→crash cycles inside that window therefore accumulate to the bounded breaker. Controlled shutdown resets the session-local failure counter explicitly.  
+**Regression guard:** MaxConsecutiveFailures remains authoritative and fast Ready→crash loops cannot erase prior failures merely by handshaking successfully.  
+**Verification result:** SOURCE-TRACE VERIFIED. Timed crash-loop execution remains R8.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 Ready→crash stability-window matrix.
+
 ---
 
 ## X35 — Identity bank can exceed the 4 MiB protocol frame limit
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1970,11 +2030,23 @@ Boundary tests below, equal to, and above 4 MiB; large identity banks must build
 
 No supported library size can fail merely because one JSON frame exceeded the protocol maximum.
 
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `fd4a5dd7a1e647cb6a646906fffc431d4228691c` (protocol/worker foundation `36c0ef512a5a347033a28025bf6641f15a2fbb24`)  
+**Changed paths:** `src/Neuterradise.Profiling.Protocol/ProfilingProtocol.cs`; `src/Neuterradise.Profiling.Protocol/ProfilingContracts.cs`; `src/Neuterradise.Profiling.Worker/IdentityMatching/IdentityIndexCache.cs`; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs`; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs`.  
+**Traceability checked:** IdentityBankProvider sample bank → deterministic bank signature → encoded-size-aware chunk producer → protocol v3 4 MiB frame gate → ordered worker transfer accumulator → final IdentityIndex publication → matching.  
+**Root-cause correction:** BuildIdentityIndex is now a bounded ordered chunk protocol. Host chunking budgets the actual serialized sample size with envelope reserve and rechecks the complete envelope payload before every send; the worker requires a stable signature/model/space and contiguous chunk order and publishes the index only on the final chunk.  
+**Regression guard:** no individual wire frame may exceed MaximumFramePayloadSize; oversized individual samples fail before transport; partial/out-of-order transfer does not become a matchable index.  
+**Verification result:** SOURCE-TRACE VERIFIED. Boundary/equal/above-4-MiB large-bank execution remains R8.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 large-bank transport and frame-boundary evidence.
+
 ---
 
 ## X36 — ReleaseIndex is only guaranteed on the matching happy path
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1995,6 +2067,18 @@ Cancel/fail after BuildIdentityIndex and at each MatchIdentityCandidates iterati
 ### Verification
 
 No request-local index leak after terminal completion.
+
+### R5 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `fd4a5dd7a1e647cb6a646906fffc431d4228691c` (worker release acknowledgement foundation `36c0ef512a5a347033a28025bf6641f15a2fbb24`)  
+**Changed paths:** `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs`; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs`; `src/Neuterradise.Profiling.Worker/IdentityMatching/IdentityIndexCache.cs`.  
+**Traceability checked:** first BuildIdentityIndex attempt → build/match success/failure/cancellation → finally cleanup with independent bounded token → ReleaseIndex acknowledgement → loaded and pending worker index invalidation.  
+**Root-cause correction:** remote index lifetime is now a finally-governed lease. Cleanup does not reuse the cancelled analysis token, worker ReleaseIndex is acknowledged as a request/response operation, and invalidation removes both a completed index and any partial chunk transfer.  
+**Regression guard:** cancellation or failure after transfer start cannot exit the host matching scope without attempting independent cleanup; worker shutdown also invalidates all index state.  
+**Verification result:** SOURCE-TRACE VERIFIED. LoadedIndexCount fault-injection checks remain R8.  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 cancel/fail-at-each-stage index-leak evidence.
 
 ---
 
@@ -3918,6 +4002,8 @@ Acceptance:
 - VaultLock released last.
 
 ## Phase R5 — Fix profiling/faces
+
+**Implementation status — 2026-09-19:** SOURCE-CLOSED through `2c1ebd71abe0e7b65055d6d54709dae34b6c72e3` (protocol/worker foundation `36c0ef512a5a347033a28025bf6641f15a2fbb24`; runtime/persistence closure `fd4a5dd7a1e647cb6a646906fffc431d4228691c`; direct-sample cache hardening `f2a6d5bf858fef03cd594d193f02f1325c7d9d9a`). X30–X36 are SOURCE-CLOSED at source level. No build/test/native runtime/fault-injection acceptance is claimed here; executable evidence remains R8 under AGENTS.md.
 
 Target:
 
