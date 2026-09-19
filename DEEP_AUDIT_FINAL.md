@@ -2822,7 +2822,7 @@ Every baseline area below has an owning audit stage. A row without a unique find
 | Runtime/Import | 38 | Stages 1, 4, 5, 10, 11, 12; X09–X26, X25, X69, X72–X73 |
 | Runtime/Localization | 4 | Stages 1, 8, 10, 11; X40 |
 | Runtime/Maintenance | 10 | Stages 1, 3, 4, 7, 10, 11; X13 and lifecycle integrity coverage |
-| Runtime/Media | 24 | Stages 1, 4, 8, 10, 11, 12; X09–X18, X42, X67 |
+| Runtime/Media | 24 | Stages 1, 4, 8, 10, 11, 12; active findings X09–X14, X17, X42, X67, X70 |
 | Runtime root project/global usings | 2 | Stages 1, 9, 11; build/toolchain coverage |
 | Runtime/Presentation | 12 | Stages 1, 8, 10, 11; presentation install/runtime traced; no unique additional finding |
 | Runtime/Profiles | 10 | Stages 1, 2, 3, 7, 8, 10, 11; X01, X04–X08, X37–X42 |
@@ -2830,19 +2830,19 @@ Every baseline area below has an owning audit stage. A row without a unique find
 | Runtime/Settings | 4 | Stages 1, 8, 10, 11; X39–X41 |
 | Runtime/Shell | 15 | Stages 1, 8, 10, 11, 12; X38–X42, X53–X55, X68 |
 | SystemServices/Cache | 15 | Stages 1, 4, 6, 8, 10, 11; cache/resource lifetime traced |
-| SystemServices/Database | 49 | Stages 1, 3–7, 10, 11; X06–X08, X19–X26, X37, X51, X69, X72–X73 |
+| SystemServices/Database | 49 | Stages 1, 3–7, 10, 11; active findings X06–X08, X19–X26, X37, X69, X72–X73 |
 | SystemServices/Diagnostics | 2 | Stages 1, 10, 11; runtime evidence support |
-| SystemServices/Jobs | 27 | Stages 1, 5, 6, 10, 11, 12; X19–X26, X30–X36, X51, X66, X69 |
+| SystemServices/Jobs | 27 | Stages 1, 5, 6, 10, 11, 12; active findings X19–X26, X30–X36, X66, X69 |
 | SystemServices/Lifecycle | 9 | Stages 1, 2, 5, 10, 11, 12; X01, X22–X23, X52–X55, X68 |
 | SystemServices/MediaTools | 4 | Stages 1, 4, 9, 11, 12; X44, X57, X71 |
 | SystemServices/Operations | 6 | Stages 1, 3–5, 7, 10, 11; idempotency/operation authority coverage |
 | SystemServices/ProductIdentity.cs | 1 | Stages 1, 9, 11; X49–X50 |
-| SystemServices/Recovery | 8 | Stages 1, 3–5, 7, 9–11; X08, X23, X47–X48, X51–X55 |
+| SystemServices/Recovery | 8 | Stages 1, 3–5, 7, 9–11; active findings X08, X23, X47–X48, X52–X55 |
 | SystemServices/Resources | 2 | Stages 1, 5, 8, 10, 11; resource-governor/lifetime coverage |
-| SystemServices/Storage | 23 | Stages 1, 4, 7, 9–11; X04–X18, X37, X52 |
+| SystemServices/Storage | 23 | Stages 1, 4, 7, 9–11; active findings X04–X14, X17, X37, X52 |
 | SystemServices/TimeAndIds | 2 | Stages 1, 3, 5, 10; identity/time durability support |
 | SystemServices/UiPrimitives.cs | 1 | Stages 1, 8, 10; UI primitive coverage |
-| SystemServices/Updates | 14 | Stages 1, 9–12; X02, X18, X43–X50, X55, X60, X64–X65 |
+| SystemServices/Updates | 14 | Stages 1, 9–12; active/evidence findings X02, X43–X50, X55, X60, X64–X65 |
 | SystemServices/Win32Clipboard.cs | 1 | Stages 1, 8, 12; X70 |
 | Runtime/Trash | 9 | Stages 1, 3, 7, 10, 11; X06–X08, X37 |
 | Neuterradise.Updater | 3 | Stages 1, 9–11; X02, X45–X49, X55, X60 |
@@ -2856,11 +2856,11 @@ Coverage is not based only on directory ownership. The audit explicitly traced t
 | Failure dimension | Owning findings/stages |
 | --- | --- |
 | DB trigger/FK invariant conflict | X06–X08, X37; Stages 3 and 7 |
-| crash between physical I/O and DB checkpoint | X08–X12, X37, X47, X51–X55 |
-| cancellation/pause/shutdown intent races | X19–X26, X51–X55, X66, X69, X73, X66, X69, X73 |
-| stale writer / CAS / terminal-state escape | X21, X24, X51 |
-| shared asset / cross-import lifetime | X15, X69, X72–X73 |
-| path traversal / containment / reparse | X18, X64–X65 |
+| crash between physical I/O and DB checkpoint | X08–X12, X37, X47, X52–X55 |
+| cancellation/pause/shutdown intent races | X19–X26, X52–X55, X66, X69, X73 |
+| stale writer / CAS / terminal-state escape | X21, X24 |
+| shared asset / cross-import lifetime | X69, X72–X73 |
+| path traversal / containment / reparse | X64–X65 (X18 rejected by falsification) |
 | destructive source deletion identity | X10–X11 |
 | package/component completeness | X11, X13–X17, X44, X65 |
 | worker IPC/model/native runtime | X03, X30–X36, X59 |
@@ -2902,7 +2902,7 @@ Shared contract:
 
 ## Cluster B — Managed path / physical authority
 
-X04, X05, X09–X18
+X04, X05, X09–X14, X17
 
 Shared contract:
 
@@ -2950,7 +2950,7 @@ background read/compute → durable mutation where required → UI dispatcher co
 
 ## Cluster F — Release trust and updater lifecycle
 
-X02, X18, X43–X50, X55, X57, X60, X64–X65, X71
+X02, X43–X50, X55, X57, X60, X64–X65, X71
 
 Shared contract:
 
