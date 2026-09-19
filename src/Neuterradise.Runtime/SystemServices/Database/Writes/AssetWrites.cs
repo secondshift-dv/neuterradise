@@ -1326,6 +1326,7 @@ public sealed class AssetWrites
     public async Task UpdateAssetPackageIdentityAsync(
         Guid assetId,
         AssetDependencyStatus dependencyStatus,
+        DependencyDiscoveryState discoveryState,
         string? bundleSha256,
         CancellationToken cancellationToken = default)
     {
@@ -1341,12 +1342,14 @@ public sealed class AssetWrites
             """
             UPDATE assets
             SET dependency_status = $status,
+                dependency_discovery_state = $discoveryState,
                 bundle_sha256 = $bundleSha256,
                 row_version = row_version + 1
             WHERE asset_id = $id;
             """))
         {
             update.Parameters.AddWithValue("$status", DbEnum.Format(dependencyStatus));
+            update.Parameters.AddWithValue("$discoveryState", DbEnum.Format(discoveryState));
             update.Parameters.AddWithValue(
                 "$bundleSha256",
                 string.IsNullOrWhiteSpace(bundleSha256) ? DBNull.Value : bundleSha256.Trim().ToLowerInvariant());

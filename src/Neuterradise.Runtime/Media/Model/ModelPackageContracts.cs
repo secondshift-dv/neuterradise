@@ -45,15 +45,37 @@ public sealed record DiscoveredComponent(
     string? OriginalSourcePath,
     bool Exists);
 
+public enum DependencyDiscoveryState
+{
+    Complete,
+    MissingDependencies,
+    Unknown,
+    FailedRetryable,
+    FailedTerminal,
+    Unsupported,
+}
+
 public sealed record ModelPackageDiscoveryResult(
     ModelPackageFormat Format,
     AssetDependencyStatus DependencyStatus,
+    DependencyDiscoveryState DiscoveryState,
     string? BundleSha256,
     IReadOnlyList<DiscoveredComponent> Components)
 {
-    public bool IsComplete => DependencyStatus is AssetDependencyStatus.Complete or AssetDependencyStatus.SelfContained;
-    public bool HasMissingDependencies => DependencyStatus == AssetDependencyStatus.DependenciesMissing;
-    public bool HasUnknownDependencies => DependencyStatus == AssetDependencyStatus.DependenciesUnknown;
+    public bool IsComplete =>
+        DiscoveryState == DependencyDiscoveryState.Complete
+        && DependencyStatus is AssetDependencyStatus.Complete or AssetDependencyStatus.SelfContained;
+
+    public bool HasMissingDependencies =>
+        DiscoveryState == DependencyDiscoveryState.MissingDependencies
+        || DependencyStatus == AssetDependencyStatus.DependenciesMissing;
+
+    public bool HasUnknownDependencies =>
+        DiscoveryState is DependencyDiscoveryState.Unknown
+            or DependencyDiscoveryState.FailedRetryable
+            or DependencyDiscoveryState.FailedTerminal
+            or DependencyDiscoveryState.Unsupported
+        || DependencyStatus == AssetDependencyStatus.DependenciesUnknown;
 }
 
 public sealed record ModelPackagePlan(
@@ -176,8 +198,9 @@ public static class ModelPackageDiscovery
             return new ModelPackageDiscoveryResult(
                 format,
                 AssetDependencyStatus.DependenciesMissing,
-                BundleSha256: null,
-                Components: Array.Empty<DiscoveredComponent>());
+                DependencyDiscoveryState.MissingDependencies,
+                null,
+                Array.Empty<DiscoveredComponent>());
         }
 
         var primaryInfo = new FileInfo(fullPath);
@@ -190,15 +213,16 @@ public static class ModelPackageDiscovery
             primaryLength,
             primarySha,
             fullPath,
-            Exists: true);
+            true);
 
         if (format == ModelPackageFormat.Glb)
         {
             return new ModelPackageDiscoveryResult(
                 format,
                 AssetDependencyStatus.SelfContained,
-                BundleSha256: primarySha,
-                Components: [primaryComp]);
+                DependencyDiscoveryState.Complete,
+                primarySha,
+                [primaryComp]);
         }
 
         if (format is ModelPackageFormat.Fbx or ModelPackageFormat.Blend)
@@ -206,23 +230,42 @@ public static class ModelPackageDiscovery
             return new ModelPackageDiscoveryResult(
                 format,
                 AssetDependencyStatus.DependenciesUnknown,
-                BundleSha256: null,
-                Components: [primaryComp]);
+                DependencyDiscoveryState.Unsupported,
+                null,
+                [primaryComp]);
         }
 
         var discoveredDeps = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (format == ModelPackageFormat.Gltf)
+        try
         {
-            DiscoverGltfDependencies(fullPath, discoveredDeps);
+            if (format == ModelPackageFormat.Gltf)
+            {
+                DiscoverGltfDependencies(fullPath, discoveredDeps);
+            }
+            else if (format == ModelPackageFormat.Obj)
+            {
+                DiscoverObjDependencies(fullPath, packageDir, discoveredDeps);
+            }
+            else if (format == ModelPackageFormat.Dae)
+            {
+                DiscoverDaeDependencies(fullPath, discoveredDeps);
+            }
         }
-        else if (format == ModelPackageFormat.Obj)
+        catch (UnauthorizedAccessException)
         {
-            DiscoverObjDependencies(fullPath, packageDir, discoveredDeps);
+            return Failure(format, primaryComp, DependencyDiscoveryState.FailedRetryable);
         }
-        else if (format == ModelPackageFormat.Dae)
+        catch (IOException)
         {
-            DiscoverDaeDependencies(fullPath, discoveredDeps);
+            return Failure(format, primaryComp, DependencyDiscoveryState.FailedRetryable);
+        }
+        catch (JsonException)
+        {
+            return Failure(format, primaryComp, DependencyDiscoveryState.FailedTerminal);
+        }
+        catch (FormatException)
+        {
+            return Failure(format, primaryComp, DependencyDiscoveryState.FailedTerminal);
         }
 
         var components = new List<DiscoveredComponent> { primaryComp };
@@ -231,19 +274,17 @@ public static class ModelPackageDiscovery
         foreach (var (relPath, normPath) in discoveredDeps)
         {
             var depFullPath = Path.Combine(packageDir, relPath.Replace('/', Path.DirectorySeparatorChar));
-            var exists = File.Exists(depFullPath);
-            if (exists)
+            if (File.Exists(depFullPath))
             {
                 var depInfo = new FileInfo(depFullPath);
-                var depSha = ModelPackagePlan.Hash(depFullPath);
                 components.Add(new DiscoveredComponent(
                     relPath,
                     normPath,
                     ComponentRole.Dependency,
                     depInfo.Length,
-                    depSha,
+                    ModelPackagePlan.Hash(depFullPath),
                     depFullPath,
-                    Exists: true));
+                    true));
             }
             else
             {
@@ -255,7 +296,7 @@ public static class ModelPackageDiscovery
                     0,
                     new string('0', 64),
                     depFullPath,
-                    Exists: false));
+                    false));
             }
         }
 
@@ -264,116 +305,102 @@ public static class ModelPackageDiscovery
             : hasMissing
                 ? AssetDependencyStatus.DependenciesMissing
                 : AssetDependencyStatus.Complete;
-
-        var bundleSha = status is AssetDependencyStatus.Complete or AssetDependencyStatus.SelfContained
+        var discoveryState = hasMissing
+            ? DependencyDiscoveryState.MissingDependencies
+            : DependencyDiscoveryState.Complete;
+        var bundleSha = discoveryState == DependencyDiscoveryState.Complete
             ? ModelPackagePlan.HashBundle(components)
             : null;
 
-        return new ModelPackageDiscoveryResult(format, status, bundleSha, components);
+        return new ModelPackageDiscoveryResult(format, status, discoveryState, bundleSha, components);
     }
+
+    private static ModelPackageDiscoveryResult Failure(
+        ModelPackageFormat format,
+        DiscoveredComponent primary,
+        DependencyDiscoveryState state) =>
+        new(format, AssetDependencyStatus.DependenciesUnknown, state, null, [primary]);
 
     private static void DiscoverGltfDependencies(string gltfPath, Dictionary<string, string> deps)
     {
-        try
+        using var stream = File.OpenRead(gltfPath);
+        using var doc = JsonDocument.Parse(stream);
+        var root = doc.RootElement;
+
+        if (root.TryGetProperty("buffers", out var buffers) && buffers.ValueKind == JsonValueKind.Array)
         {
-            using var stream = File.OpenRead(gltfPath);
-            using var doc = JsonDocument.Parse(stream);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("buffers", out var buffers) && buffers.ValueKind == JsonValueKind.Array)
+            foreach (var buffer in buffers.EnumerateArray())
             {
-                foreach (var b in buffers.EnumerateArray())
+                if (buffer.TryGetProperty("uri", out var uri) && uri.ValueKind == JsonValueKind.String)
                 {
-                    if (b.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String)
-                    {
-                        AddSafeUri(uriProp.GetString(), unescape: true, deps);
-                    }
-                }
-            }
-
-            if (root.TryGetProperty("images", out var images) && images.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var img in images.EnumerateArray())
-                {
-                    if (img.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String)
-                    {
-                        AddSafeUri(uriProp.GetString(), unescape: true, deps);
-                    }
+                    AddSafeUri(uri.GetString(), true, deps);
                 }
             }
         }
-        catch (JsonException)
+
+        if (root.TryGetProperty("images", out var images) && images.ValueKind == JsonValueKind.Array)
         {
+            foreach (var image in images.EnumerateArray())
+            {
+                if (image.TryGetProperty("uri", out var uri) && uri.ValueKind == JsonValueKind.String)
+                {
+                    AddSafeUri(uri.GetString(), true, deps);
+                }
+            }
         }
     }
 
     private static void DiscoverObjDependencies(string objPath, string packageDir, Dictionary<string, string> deps)
     {
-        try
+        var mtlFiles = new List<string>();
+        foreach (var line in File.ReadLines(objPath))
         {
-            var mtlFiles = new List<string>();
-            foreach (var line in File.ReadLines(objPath))
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith("#")) continue;
+            var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length >= 2 && string.Equals(tokens[0], "mtllib", StringComparison.OrdinalIgnoreCase))
             {
-                var trimmed = line.Trim();
-                if (trimmed.Length == 0 || trimmed.StartsWith("#")) continue;
-                var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-                if (tokens.Length >= 2 && string.Equals(tokens[0], "mtllib", StringComparison.OrdinalIgnoreCase))
+                for (var i = 1; i < tokens.Length; i++)
                 {
-                    for (var i = 1; i < tokens.Length; i++)
+                    if (AddSafeUri(tokens[i], false, deps))
                     {
-                        var mtlName = tokens[i];
-                        if (AddSafeUri(mtlName, unescape: false, deps))
-                        {
-                            mtlFiles.Add(mtlName);
-                        }
-                    }
-                }
-            }
-
-            foreach (var mtlName in mtlFiles)
-            {
-                var mtlFullPath = Path.Combine(packageDir, mtlName.Replace('/', Path.DirectorySeparatorChar));
-                if (!File.Exists(mtlFullPath)) continue;
-
-                foreach (var mtlLine in File.ReadLines(mtlFullPath))
-                {
-                    var trimmed = mtlLine.Trim();
-                    if (trimmed.Length == 0 || trimmed.StartsWith("#")) continue;
-                    var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-                    if (tokens.Length >= 2)
-                    {
-                        var directive = tokens[0].ToLowerInvariant();
-                        if (directive is "map_kd" or "map_bump" or "bump" or "map_d" or "map_ks" or "map_ka" or "map_ns" or "disp" or "decal")
-                        {
-                            var texFile = tokens[^1];
-                            AddSafeUri(texFile, unescape: false, deps);
-                        }
+                        mtlFiles.Add(tokens[i]);
                     }
                 }
             }
         }
-        catch (IOException)
+
+        foreach (var mtlName in mtlFiles)
         {
+            var mtlPath = Path.Combine(packageDir, mtlName.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(mtlPath)) continue;
+
+            foreach (var line in File.ReadLines(mtlPath))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0 || trimmed.StartsWith("#")) continue;
+                var tokens = trimmed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length < 2) continue;
+                var directive = tokens[0].ToLowerInvariant();
+                if (directive is "map_kd" or "map_bump" or "bump" or "map_d" or "map_ks" or "map_ka" or "map_ns" or "disp" or "decal")
+                {
+                    AddSafeUri(tokens[^1], false, deps);
+                }
+            }
         }
     }
 
     private static void DiscoverDaeDependencies(string daePath, Dictionary<string, string> deps)
     {
-        try
+        var text = File.ReadAllText(daePath);
+        var regex = new Regex(@"<init_from>\s*(.*?)\s*</init_from>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        foreach (Match match in regex.Matches(text))
         {
-            var text = File.ReadAllText(daePath);
-            var regex = new Regex(@"<init_from>\s*(.*?)\s*</init_from>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            foreach (Match match in regex.Matches(text))
+            var value = match.Groups[1].Value.Trim();
+            if (!string.IsNullOrEmpty(value))
             {
-                var val = match.Groups[1].Value.Trim();
-                if (!string.IsNullOrEmpty(val))
-                {
-                    AddSafeUri(val, unescape: true, deps);
-                }
+                AddSafeUri(value, true, deps);
             }
-        }
-        catch (IOException)
-        {
         }
     }
 
@@ -387,9 +414,7 @@ public static class ModelPackageDiscovery
             return false;
         }
 
-        var candidate = unescape ? Uri.UnescapeDataString(uri) : uri;
-        candidate = candidate.Trim().Replace('\\', '/');
-
+        var candidate = (unescape ? Uri.UnescapeDataString(uri) : uri).Trim().Replace('\\', '/');
         if (Path.IsPathRooted(candidate)
             || candidate.Contains(':')
             || candidate.Split('/').Any(segment => segment is ".." or "."))

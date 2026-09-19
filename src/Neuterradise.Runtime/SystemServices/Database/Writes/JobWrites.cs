@@ -692,35 +692,138 @@ public sealed class JobWrites
         return count;
     }
 
+    public async Task RegisterImportAssetInterestAsync(
+        Guid importUnitId,
+        Guid assetId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(importUnitId, nameof(importUnitId));
+        EnsureNonEmpty(assetId, nameof(assetId));
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection);
+
+        var now = DbTime.Format(_timeProvider.GetUtcNow());
+        await using (var register = transaction.CreateCommand(
+            """
+            INSERT INTO import_asset_interests(
+                import_unit_id, asset_id, desired_priority, created_at_ms, updated_at_ms)
+            VALUES(
+                $unitId,
+                $assetId,
+                CASE WHEN EXISTS(
+                    SELECT 1 FROM settings
+                    WHERE key = $focusedKey
+                      AND value_json = '"' || $unitId || '"'
+                ) THEN $focusedPriority ELSE $backgroundPriority END,
+                $now,
+                $now)
+            ON CONFLICT(import_unit_id, asset_id) DO UPDATE SET
+                desired_priority = excluded.desired_priority,
+                updated_at_ms = excluded.updated_at_ms;
+            """))
+        {
+            register.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));
+            register.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+            register.Parameters.AddWithValue("$focusedKey", ImportPriorityOperations.SettingKey);
+            register.Parameters.AddWithValue("$focusedPriority", JobPriorityPolicy.PriorityCurrentImport);
+            register.Parameters.AddWithValue("$backgroundPriority", JobPriorityPolicy.DefaultPriority);
+            register.Parameters.AddWithValue("$now", now);
+            await register.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await RecomputeAssetPriorityInTransactionAsync(transaction, assetId, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<int> SetImportUnitPriorityInTransactionAsync(
         CatalogTransaction transaction,
         Guid importUnitId,
         int priority,
         CancellationToken cancellationToken)
     {
+        var clamped = JobPriorityPolicy.Clamp(priority);
+
+        await using (var interest = transaction.CreateCommand(
+            """
+            UPDATE import_asset_interests
+            SET desired_priority = $priority,
+                updated_at_ms = CAST(unixepoch('subsec') * 1000 AS INTEGER)
+            WHERE import_unit_id = $unitId;
+            """))
+        {
+            interest.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));
+            interest.Parameters.AddWithValue("$priority", clamped);
+            await interest.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await using var update = transaction.CreateCommand(
             """
-            WITH RECURSIVE scoped_jobs(job_id) AS (
-                SELECT DISTINCT j.job_id
-                FROM import_items i
-                JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = i.candidate_asset_id
-                WHERE i.import_unit_id = $unitId
-                  AND i.candidate_asset_id IS NOT NULL
-                UNION
-                SELECT dependency.depends_on_job_id
-                FROM job_dependencies dependency
-                JOIN scoped_jobs scoped ON scoped.job_id = dependency.job_id
-            )
             UPDATE jobs
-            SET priority = $priority,
+            SET priority = COALESCE(
+                    (
+                        SELECT MAX(interest.desired_priority)
+                        FROM import_asset_interests interest
+                        JOIN import_units live ON live.import_unit_id = interest.import_unit_id
+                        WHERE interest.asset_id = jobs.owner_id
+                          AND live.is_paused = 0
+                          AND live.state NOT IN (
+                              'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                              'CANCELLED','FAILED_TERMINAL'
+                          )
+                    ),
+                    $priority
+                ),
                 row_version = row_version + 1
-            WHERE job_id IN (SELECT job_id FROM scoped_jobs)
-              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE')
-              AND priority <> $priority;
+            WHERE owner_type = 'Asset'
+              AND owner_id IN (
+                  SELECT candidate_asset_id
+                  FROM import_items
+                  WHERE import_unit_id = $unitId
+                    AND candidate_asset_id IS NOT NULL
+                  UNION
+                  SELECT asset_id
+                  FROM import_asset_interests
+                  WHERE import_unit_id = $unitId
+              )
+              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE');
             """);
         update.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));
-        update.Parameters.AddWithValue("$priority", JobPriorityPolicy.Clamp(priority));
+        update.Parameters.AddWithValue("$priority", clamped);
         return await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task RecomputeAssetPriorityInTransactionAsync(
+        CatalogTransaction transaction,
+        Guid assetId,
+        CancellationToken cancellationToken)
+    {
+        await using var update = transaction.CreateCommand(
+            """
+            UPDATE jobs
+            SET priority = COALESCE(
+                    (
+                        SELECT MAX(interest.desired_priority)
+                        FROM import_asset_interests interest
+                        JOIN import_units live ON live.import_unit_id = interest.import_unit_id
+                        WHERE interest.asset_id = $assetId
+                          AND live.is_paused = 0
+                          AND live.state NOT IN (
+                              'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                              'CANCELLED','FAILED_TERMINAL'
+                          )
+                    ),
+                    $backgroundPriority
+                ),
+                row_version = row_version + 1
+            WHERE owner_type = 'Asset'
+              AND owner_id = $assetId
+              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE');
+            """);
+        update.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+        update.Parameters.AddWithValue("$backgroundPriority", JobPriorityPolicy.DefaultPriority);
+        await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<JobDefinition> ApplyFocusedImportPriorityAsync(
@@ -736,10 +839,22 @@ public sealed class JobWrites
         await using var command = transaction.CreateCommand(
             """
             SELECT 1
-            FROM import_items item
-            JOIN settings setting ON setting.key = $key
-            WHERE item.candidate_asset_id = $assetId
-              AND setting.value_json = '"' || item.import_unit_id || '"'
+            FROM settings setting
+            WHERE setting.key = $key
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM import_items item
+                      WHERE item.candidate_asset_id = $assetId
+                        AND setting.value_json = '"' || item.import_unit_id || '"'
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM import_asset_interests interest
+                      WHERE interest.asset_id = $assetId
+                        AND setting.value_json = '"' || interest.import_unit_id || '"'
+                  )
+              )
             LIMIT 1;
             """);
         command.Parameters.AddWithValue("$key", ImportPriorityOperations.SettingKey);

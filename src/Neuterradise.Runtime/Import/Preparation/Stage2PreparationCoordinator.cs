@@ -102,6 +102,9 @@ public sealed class Stage2PreparationCoordinator
                 continue;
             }
 
+            await _jobWrites.RegisterImportAssetInterestAsync(unitId, assetId, cancellationToken)
+                .ConfigureAwait(false);
+
             // Stage 2 begins only after Stage 1 domain authority. Resolve media type from the
             // effective ACTIVE asset so reused items do not inherit retired candidate authority.
             var mediaType = await ReadActiveAssetMediaTypeAsync(assetId, cancellationToken).ConfigureAwait(false);

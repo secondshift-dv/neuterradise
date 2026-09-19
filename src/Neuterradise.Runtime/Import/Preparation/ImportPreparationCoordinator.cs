@@ -169,6 +169,7 @@ public sealed class ImportPreparationCoordinator
             await _catalog.AssetWrites.UpdateAssetPackageIdentityAsync(
                     item.CandidateAssetId.Value,
                     discovery.DependencyStatus,
+                    discovery.DiscoveryState,
                     discovery.BundleSha256,
                     cancellationToken)
                 .ConfigureAwait(false);

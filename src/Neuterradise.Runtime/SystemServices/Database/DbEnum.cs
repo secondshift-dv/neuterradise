@@ -248,6 +248,28 @@ public static class DbEnum
         _ => throw new FormatException($"'{value}' is not a valid AssetDependencyStatus database value."),
     };
 
+    public static string Format(DependencyDiscoveryState value) => value switch
+    {
+        DependencyDiscoveryState.Complete => "COMPLETE",
+        DependencyDiscoveryState.MissingDependencies => "MISSING_DEPENDENCIES",
+        DependencyDiscoveryState.Unknown => "UNKNOWN",
+        DependencyDiscoveryState.FailedRetryable => "FAILED_RETRYABLE",
+        DependencyDiscoveryState.FailedTerminal => "FAILED_TERMINAL",
+        DependencyDiscoveryState.Unsupported => "UNSUPPORTED",
+        _ => throw new ArgumentOutOfRangeException(nameof(value), value, null),
+    };
+
+    public static DependencyDiscoveryState ParseDependencyDiscoveryState(string value) => value switch
+    {
+        "COMPLETE" => DependencyDiscoveryState.Complete,
+        "MISSING_DEPENDENCIES" => DependencyDiscoveryState.MissingDependencies,
+        "UNKNOWN" => DependencyDiscoveryState.Unknown,
+        "FAILED_RETRYABLE" => DependencyDiscoveryState.FailedRetryable,
+        "FAILED_TERMINAL" => DependencyDiscoveryState.FailedTerminal,
+        "UNSUPPORTED" => DependencyDiscoveryState.Unsupported,
+        _ => throw new FormatException($"'{value}' is not a valid DependencyDiscoveryState database value."),
+    };
+
     public static string Format(ComponentRole value) => value switch
     {
         ComponentRole.Primary => "PRIMARY",
