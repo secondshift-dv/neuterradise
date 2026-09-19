@@ -231,14 +231,14 @@ Rules:
 | X16 | REJECTED evidence: `src/Neuterradise.Runtime/Import/Verification/VerificationValidator.cs` — persisted acknowledged-missing-dependency consumption. |
 | X17 | `src/Neuterradise.Runtime/SystemServices/Storage/ManagedPathPlanner.cs` — `PlanAsset` / allocator authority; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs` and `src/Neuterradise.Runtime/Media/MediaOperations.cs` — direct-plan callers. |
 | X18 | REJECTED evidence: `src/Neuterradise.Runtime/SystemServices/Storage/RootPathRules.cs` plus inspected update/storage/recovery consumers; no reachable naive-prefix authority was proven. |
-| X19 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — interruption completion semantics; job handlers returning `JobExecutionResult.Cancelled`; `src/Neuterradise.Runtime/SystemServices/Jobs/JobCancellationOperations.cs` — control intent. |
-| X20 | `src/Neuterradise.Runtime/Import/ImportFinalizer.cs`, `src/Neuterradise.Runtime/Import/ImportCancellationSettlement.cs`, and `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs` — competing ImportUnit mutation actors. |
-| X21 | `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs` — unit lifecycle writes/CAS authority; callers in Import Finalizer/control/recovery. |
+| X19 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — interruption completion semantics; `src/Neuterradise.Runtime/SystemServices/Jobs/JobCancellationOperations.cs` — control intent; `JobLeaseStore.cs` and `src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs` — resumable shutdown interruption settlement; handlers returning `JobExecutionResult.Cancelled` are semantic-input producers only. |
+| X20 | `src/Neuterradise.Runtime/SystemServices/Database/ImportUnitMutationCoordinator.cs` — canonical per-ImportUnit mutation lease; `ImportFinalizer.cs`, `ImportCancellationSettlement.cs`, `ImportCommitCoordinator.cs`, `ImportPublicationCoordinator.cs`, and `src/Neuterradise.Runtime/SystemServices/Recovery/ImportRecovery.cs` — mutation actors sharing it. |
+| X21 | `src/Neuterradise.Runtime/Import/ImportReadModels.cs` — canonical lifecycle lattice; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportWrites.cs` — monotonic state-transition/CAS authority; `ImportUnitWrites.cs` — pause/resume/cancel/retry predicates; callers in Finalizer/control/publication/recovery. |
 | X22 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — bounded disposal and context disposal; `src/Neuterradise.Runtime/SystemServices/Recovery/VaultLock.cs` — lock lifetime. |
-| X23 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/SessionMarkerStore.cs` — `WriteUncleanAsync`; `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs` and `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — lifecycle ordering. |
+| X23 | `SessionMarkerStore.cs` — UNCLEAN/CLEAN persistence; `AppBootstrapper.cs` — UNCLEAN ordering; `BootstrapContext.cs` — SessionId/Generation ownership; `ShutdownCoordinator.cs` — matching CLEAN ordering. |
 | X24 | `src/Neuterradise.Runtime/Import/ImportUnitControlAuthority.cs` — Start/Prioritize; `src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs` — focus persistence; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs` — resume legality. |
 | X25 | `src/Neuterradise.Runtime/SystemServices/Database/Reads/CapabilityReads.cs` — required/terminal aggregation; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — readiness projection; `src/Neuterradise.Runtime/SystemServices/Database/Writes/CapabilityWrites.cs` — capability state. |
-| X26 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — scheduler shutdown cancellation; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/StorageJobResultMapper.cs` and `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/HashAssetJobHandler.cs` — cancellation-to-job-result mapping on resumable work. |
+| X26 | `JobScheduler.cs` — scheduler shutdown intent/catch ordering; `JobLeaseStore.cs` and `JobWrites.cs` — RUNNING→PENDING shutdown settlement; `StorageJobResultMapper.cs` and `HashAssetJobHandler.cs` remain cancellation-result producers normalized by the scheduler. |
 | X30 | `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — serialized read loop, `HandleAnalyzeFacesAsync`, and `CancelRequest`. |
 | X31 | `src/Neuterradise.Profiling.Worker/FaceAnalysis/FaceAnalyzer.cs` — `ExpectedSha256` analysis path; `src/Neuterradise.Profiling.Worker/FaceAnalysis/OpenCvFaceImageSource.cs` — bytes decoded for inference. |
 | X32 | `src/Neuterradise.Runtime/Faces/IdentityBankProvider.cs` — cached embedding spaces/`InvalidateSpace`; `src/Neuterradise.Runtime/Faces/FaceDecisionOperations.cs` — sample mutations. |
@@ -261,10 +261,10 @@ Rules:
 | X49 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateManifest.cs` — `MinimumCompatibleVersion`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs` — compatibility decision. |
 | X50 | `global.json`, `.github/workflows/release.yml`, and project dependency declarations — canonical SDK/dependency resolution authority. |
 | X51 | REJECTED evidence: `src/Neuterradise.Runtime/SystemServices/Recovery/JobRecovery.cs` — final-attempt reconcile/exhaustion path. |
-| X52 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `src/Neuterradise.Runtime/SystemServices/Lifecycle/BootstrapContext.cs`, and `src/Neuterradise.App/App.xaml.cs` — partial-startup resource acquisition/`CleanupPartialStartupAsync`. |
+| X52 | `AppBootstrapper.cs` — rollback-before-context-disposal contract; `StartupResult.cs` — retained-authority fail-closed result; `BootstrapContext.cs` — VaultLock ownership; `src/Neuterradise.App/App.xaml.cs` — strict runtime rollback and non-retryable retained-lock surface. |
 | X53 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `src/Neuterradise.Runtime/SystemServices/Lifecycle/CriticalIntegrityGate.cs`, and `src/Neuterradise.Runtime/SystemServices/Recovery/StorageRecovery.cs` — recovery severity vs writable-startup safety. |
-| X54 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — optional `stopAcceptingCommands`; `src/Neuterradise.App/App.xaml.cs` — production shutdown wiring. |
-| X55 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — app budget; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateHandoffService.cs` and `src/Neuterradise.Updater/ReplacementEngine.cs` — updater handoff/parent wait. |
+| X54 | `src/Neuterradise.Runtime/SystemServices/Database/CatalogMutationAdmissionGate.cs` — process-wide command admission/drain authority; `src/Neuterradise.App/App.xaml.cs` and `ShutdownCoordinator.cs` — synchronous Close/drain ordering; mutating Profile/Media/Trash/Import/Verify/Face/Related/Settings/Taxonomy/Update command boundaries consume leases. |
+| X55 | `UpdateCoordinator.cs` and `UpdateManifest.cs` — shared absolute update-shutdown deadline; `src/Neuterradise.App/App.xaml.cs` and `ShutdownCoordinator.cs` — remaining-budget consumption; `UpdateHandoffService.cs`, `src/Neuterradise.Updater/ReplacementEngine.cs`, `UpdateRecoveryPlan.cs`, and `UpdateStartupRecovery.cs` — handoff, parent wait, deterministic pre-mutation deferral/recovery. |
 | X56 | EVIDENCE boundary: `AGENTS.md`, `scripts/build.ps1`, `.github/workflows/release.yml`, and exact remediated source SHA. |
 | X57 | EVIDENCE boundary: `scripts/package-win-x64.ps1`, produced ZIP, extracted layout, and `src/Neuterradise.App/App.xaml.cs` startup path. |
 | X58 | EVIDENCE boundary: `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `src/Neuterradise.Runtime/SystemServices/Storage/AppConfigurationStore.cs`, `src/Neuterradise.Runtime/SystemServices/Storage/VaultPaths.cs`, and a disposable harness that does not yet exist on the frozen tree. |
@@ -275,7 +275,7 @@ Rules:
 | X63 | AUDIT-CONTROL authority: this `DEEP_AUDIT_FINAL.md` immutable ID register and historical Stage 7 alias record. |
 | X64 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs` — extraction sink; `src/Neuterradise.Runtime/SystemServices/Storage/RootPathRules.cs` — containment/reparse authority; `.github/workflows/security.yml` — static-analysis gate. |
 | X65 | EVIDENCE boundary: `scripts/package-win-x64.ps1` exact canonical ZIP and `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageStager.cs` exact staging consumer. |
-| X66 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — cancelled completion; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — terminal projection; `src/Neuterradise.Runtime/SystemServices/Lifecycle/ProductionRuntimeRegistry.cs` — reconciliation loop. |
+| X66 | `JobScheduler.cs` — immediate terminal observer for running cancelled completion; `JobCancellationOperations.cs` — immediate observer for idle cancellation; `Stage2CompletionHandler.cs` — capability/dependency projection; `ProductionRuntimeRegistry.cs` — observer wiring plus reconciliation fallback. |
 | X67 | `src/Neuterradise.Runtime/Media/MediaGridViewModel.cs` — `MediaActivationArbiter` and double-click timeout arbitration. |
 | X68 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ProductionRuntimeRegistry.cs` — `PublishStatusLoopAsync` / 750 ms `PeriodicTimer`. |
 | X69 | `src/Neuterradise.Runtime/SystemServices/Database/Writes/JobWrites.cs` — focused-import job scoping; `src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs`; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — shared reused-asset consumer semantics. |
@@ -1361,7 +1361,7 @@ X18 is absent from remediation queues and source-defect counts.
 
 ## X19 — Pause intent can become durable CANCELLED
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1392,11 +1392,25 @@ Race matrix Pause/Cancel/Resume/Shutdown during queued, running, checkpointing, 
 
 Pause can never permanently cancel resumable work.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `7f88baa130e108868ac9ed257f0f1e106206e6c7` (foundation `36d1104d347e0312906d3832ecdacd9cd0d96fe8`)  
+**Primary remediation phase:** R4  
+**Changed paths:** `JobScheduler.cs`; `JobCancellationOperations.cs`; `JobLeaseStore.cs`; `JobWrites.cs`.  
+**Traceability checked:** handlers returning Cancelled, registration lifetime, normal completion, Pause/Cancel intent, scheduler shutdown and catch ordering.  
+**Root-cause correction:** scheduler now owns semantic classification. Pause becomes PAUSED, explicit Cancel becomes CANCELLED, and Shutdown returns interrupted RUNNING work to resumable PENDING with interrupted-attempt refund. Handler cancellation results are inputs, not durable semantic authority.  
+**Regression guard:** intent survives until completion; linked scheduler-token cancellation is routed through Shutdown intent, including the lease-crossing-snapshot race.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static trace complete; executable race matrix remains R8.  
+**Dependency findings checked:** X20, X26, X51, X66  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 concurrency/restart evidence only.
+
 ---
 
 ## X20 — ImportFinalizer is outside Pause/Cancel quiescence ownership
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1426,11 +1440,25 @@ Race tests at every Stage 1 boundary and before/after DomainAuthorityCommitted.
 
 No cancellation settlement can undo or race a concurrently completing finalizer phase.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `724230cbacaec9797dac3c1f5b9f2d19fc3351f5` (authority introduced `e95e66440ec97cbdd16378244e800d5b413c12e5`; actor wiring `85f322f6d2970f1e2c79f4665bd366aad58f3fa7` and `e666c7e69736ae768aab72245337e9505a2f0fd1`)  
+**Primary remediation phase:** R4  
+**Changed paths:** `ImportUnitMutationCoordinator.cs`; `CatalogDb.cs`; `ImportFinalizer.cs`; `ImportCancellationSettlement.cs`; `ImportUnitControlAuthority.cs`; `ImportCommitCoordinator.cs`; `ImportPublicationCoordinator.cs`; `Stage2PreparationCoordinator.cs`; `ImportRecovery.cs`.  
+**Traceability checked:** Finalizer, cancellation settlement, Stage 1, Stage 2, publication, recovery and nested same-unit call chains.  
+**Root-cause correction:** one Catalog-owned per-ImportUnit lease serializes logical mutation spans across DB/filesystem/checkpoint work rather than only individual SQLite transactions. Re-entry is scoped to the same async flow and same unit.  
+**Regression guard:** ownership is established synchronously before a contended wait; outer lease cannot release ahead of nested leases; unrelated units remain independent.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static ownership/deadlock trace complete; contention/fault injection remains R8.  
+**Dependency findings checked:** X19, X21, X24, X52, X73  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 contention/crash matrix only.
+
 ---
 
 ## X21 — Lifecycle/checkpoint writes are not sufficiently monotonic against stale writers
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1457,11 +1485,25 @@ Concurrent stale-writer tests for Cancel, Failure, Ready, Committing, Published,
 
 Database assertion: no illegal reverse/terminal-escape transition.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `e95e66440ec97cbdd16378244e800d5b413c12e5`  
+**Primary remediation phase:** R4  
+**Changed paths:** `ImportReadModels.cs`; `ImportWrites.cs`; `ImportFinalizer.cs`; `Stage2PreparationCoordinator.cs`; `ImportPublicationCoordinator.cs`.  
+**Traceability checked:** general lifecycle writer plus Pause/Resume/Cancel/Retry predicates in `ImportUnitWrites.cs`, Finalizer, Stage-2 and publication callers.  
+**Root-cause correction:** `ImportLifecycle.CanTransitionTo` is the lifecycle lattice; `ImportWrites.UpdateUnitStateAsync` reads current state/version under write serialization and commits only against the same state + row_version, with optional expected-state/version CAS. Terminal states are absorbing.  
+**Regression guard:** stale/illegal transitions throw `CatalogConcurrencyConflictException`; terminal shared-interest cleanup occurs only inside a successful guarded transition.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static transition/caller trace complete; stale-writer execution remains R8.  
+**Dependency findings checked:** X20, X24, X25, X69, X73  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 lifecycle-race matrix only.
+
 ---
 
 ## X22 — Shutdown timeout can release VaultLock while mutation disposal is still active
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1489,11 +1531,25 @@ Slow/stuck writer fault injection. A second process must never acquire VaultLock
 
 Two-process lock test around shutdown timeout.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `b11d19ac4212e6aeaf52c24aeaf0b0750110b90f`  
+**Primary remediation phase:** R4  
+**Changed paths:** `ShutdownCoordinator.cs`; `CatalogMutationAdmissionGate.cs`; `CatalogDb.cs`.  
+**Traceability checked:** command drain, scheduler shutdown task, service disposal tasks, BootstrapContext disposal and VaultLock lifetime.  
+**Root-cause correction:** timeout no longer authorizes VaultLock release while a mutation-capable task remains alive. Timed-out scheduler/disposal tasks are awaited to actual termination before context disposal.  
+**Regression guard:** BootstrapContext/VaultLock release is last; faulted tasks may record failure but no still-running mutation task is abandoned behind lock release.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static lifetime trace complete; slow/hung execution remains R8.  
+**Dependency findings checked:** X23, X52, X54, X55  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 shutdown timing evidence.
+
 ---
 
 ## X23 — Session marker is not yet a complete crash protocol
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1519,11 +1575,25 @@ Crash at every startup/shutdown phase and assert recovery decision.
 
 A clean marker must never coexist with an unquiesced durable mutation from the same session.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `97ebefaa36dc77772e706e92246beeb0e70dc4a4`  
+**Primary remediation phase:** R4  
+**Changed paths:** `AppBootstrapper.cs`; `BootstrapContext.cs`; `ShutdownCoordinator.cs`; existing `SessionMarkerStore.cs` is the persistence authority.  
+**Traceability checked:** VaultLock acquisition, first writable startup boundary, startup failure, Ready ownership and ordered clean shutdown.  
+**Root-cause correction:** startup writes UNCLEAN immediately after writable Vault ownership and before catalog/recovery mutation. SessionId + SessionGeneration travel through BootstrapContext; shutdown writes CLEAN only for that same identity after quiescence succeeds.  
+**Regression guard:** failed startup or failed/timed-out shutdown leaves non-clean evidence; shutdown cannot invent a new clean generation.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static marker ordering trace complete; crash-kill/restart remains R8.  
+**Dependency findings checked:** X22, X52, X54  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 crash/restart evidence.
+
 ---
 
 ## X24 — Start/Prioritize can persist focus for a terminal or stale ImportUnit
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1561,9 +1631,22 @@ Race terminal completion/cancel/failure against Start and Prioritize.
 
 A terminal/missing unit can never become the persisted focused import and cannot alter runnable work through a stale control command.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `85f322f6d2970f1e2c79f4665bd366aad58f3fa7`  
+**Primary remediation phase:** R4  
+**Changed paths:** `ImportUnitControlAuthority.cs`; `ImportPriorityOperations.cs`; `JobWrites.cs`.  
+**Traceability checked:** Start/Resume/Prioritize, focused setting, lifecycle eligibility, job reprioritization and R2 shared-Asset interests.  
+**Root-cause correction:** focus is persisted only for an existing, unpaused, nonterminal/pre-publication unit inside the same transaction that changes focus/priority. Start fails when focus cannot be established and stale persisted focus is cleared instead of refreshed.  
+**Regression guard:** terminal/missing/paused units cannot become newly focused; shared Asset work still uses durable interest rows.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static focus/control trace complete; race execution remains R8.  
+**Dependency findings checked:** X20, X21, X69  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 control-race matrix.
 ## X25 — Optional Stage 2 capabilities can incorrectly gate readiness or terminal failure
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1593,11 +1676,25 @@ Matrix for every capability with Success/FailedTerminal/Cancelled/Unavailable. V
 
 Face capability unavailable must not fail an otherwise valid import when face work is optional.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `e95e66440ec97cbdd16378244e800d5b413c12e5`  
+**Primary remediation phase:** R4  
+**Changed paths:** `CapabilityReads.cs`; `Stage2PreparationCoordinator.cs`.  
+**Traceability checked:** `CapabilityApplicability.GetRequired`, seeding, readiness aggregation, failed-asset aggregation and lifecycle projection.  
+**Root-cause correction:** every eligible effective Asset remains in the denominator, but only the canonical Required capability set gates readiness/failure. Optional profiling/search/similarity failure can degrade features without failing an otherwise prepared import. Missing Required rows remain blocking.  
+**Regression guard:** both terminal readiness and FAILED filtering derive Required membership from the media-type applicability authority, not from arbitrary persisted row presence.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static readiness trace complete; required/optional execution matrix remains R8.  
+**Dependency findings checked:** X20, X21, X66  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 Stage-2 matrix.
+
 ---
 
 ## X26 — Forced shutdown lacks semantic Shutdown intent and can persist resumable work as CANCELLED
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1618,6 +1715,20 @@ Shutdown during every job lane and handler phase. Restart must resume eligible w
 ### Verification
 
 CancelledDuringShutdown for resumable work must remain zero unless user Cancel was the actual intent.
+
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `7f88baa130e108868ac9ed257f0f1e106206e6c7` (foundation `36d1104d347e0312906d3832ecdacd9cd0d96fe8`)  
+**Primary remediation phase:** R4  
+**Changed paths:** `JobScheduler.cs`; `JobCancellationOperations.cs`; `JobLeaseStore.cs`; `JobWrites.cs`.  
+**Traceability checked:** scheduler shutdown, linked cancellation, handler Cancelled mapping, attempt accounting and restart reclaimability.  
+**Root-cause correction:** Shutdown is a distinct control intent. Safe-boundary interruption under Shutdown atomically maps RUNNING→PENDING, clears transient completion/error fields and refunds the interrupted attempt instead of persisting CANCELLED. Catch ordering guarantees scheduler-token cancellation reaches this path.  
+**Regression guard:** explicit user Cancel remains terminal; Pause remains PAUSED; process shutdown cannot permanently cancel resumable work.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static shutdown/restart trace complete; forced-process execution remains R8.  
+**Dependency findings checked:** X19, X22, X51  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 process-kill/restart evidence.
 
 ---
 
@@ -2401,7 +2512,7 @@ A final-attempt interrupted job must not become a claimable/reported RUNNABLE jo
 
 ## X52 — Partial startup rollback can release VaultLock before mutation-capable runtime stops
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2429,11 +2540,25 @@ Fault inject after every startup activation boundary. A second process must not 
 
 Two-process startup-failure lock test.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `2ba612666a718298438de04e290fbef2b9ae509d` (surface hardening `b556964fed320313caf32fe4b2570f4dd36f000e`)  
+**Primary remediation phase:** R4  
+**Changed paths:** `AppBootstrapper.cs`; `StartupResult.cs`; `src/Neuterradise.App/App.xaml.cs`.  
+**Traceability checked:** Prewarm runtime creation, ShowShell activation, Finalizer/activity/runtime/resource ownership, callback failure, context disposal and retry UI.  
+**Root-cause correction:** bootstrap invokes an explicit runtime rollback authority before disposing BootstrapContext. If rollback cannot prove quiescence, startup fails closed as `STARTUP_ROLLBACK_UNSAFE` and retains BootstrapContext/VaultLock until process exit.  
+**Regression guard:** retained-authority failure is non-retryable; ordinary rollback follows reverse acquisition before lock release.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static reverse-order trace complete; injected startup failures remain R8.  
+**Dependency findings checked:** X22, X23, X54  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 startup fault-injection evidence.
+
 ---
 
 ## X53 — NeedsAttention authority ambiguity can pass startup because the critical gate does not cover path-state/recovery ambiguity
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2471,9 +2596,22 @@ Maintain a recovery-code → safety-class table and make startup tests cover eve
 
 A persisted unresolved path authority cannot reach the normal writable shell merely because its recovery finding is labeled NeedsAttention.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `97ebefaa36dc77772e706e92246beeb0e70dc4a4`  
+**Primary remediation phase:** R4  
+**Changed paths:** `RecoveryResult.cs`; `AppBootstrapper.cs`; `CriticalIntegrityGate.cs`.  
+**Traceability checked:** RecoveryFinding outcome/code, StorageRecovery managed-path findings, startup recovery decision and persisted Profile/Asset `path_state`.  
+**Root-cause correction:** recovery severity and writable-startup safety are separate authorities. Bootstrap blocks Fatal or BlocksWritableStartup findings, and CriticalIntegrityGate independently rejects any Profile/Asset still PENDING or NEEDS_ATTENTION after recovery.  
+**Regression guard:** unresolved managed-path authority cannot enter the normal writable shell even when surfaced as NeedsAttention.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static recovery/path trace complete; ambiguity startup execution remains R8.  
+**Dependency findings checked:** X04, X05, X17, X52  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 recovery/startup evidence.
 ## X54 — Global mutation command admission remains open while shutdown is already awaiting
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2502,11 +2640,25 @@ Concurrency tests issue every mutation family while Close begins. After Shutting
 
 Clean marker may be written only after command leases are zero and mutation authorities are closed.
 
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `469eee8b14609032cee280f9bf060d858dc98550` (authority chain `b11d19ac4212e6aeaf52c24aeaf0b0750110b90f` → `d8220b92e6afc158d3cee4f7e7018be7c717b972` → `ea9ea52d61dbbab7c55fc4c04752f2e930fec102` → `10d1a740a8146db6518405af886fb951c41d720b` → `64dd85bebc4dff8b8402695e6d33a3de1bf0d4a1` → `be22c9c51b2b5ddaa96a22f590ae2f5fa304ae96` → `469eee8b14609032cee280f9bf060d858dc98550`)  
+**Primary remediation phase:** R4  
+**Changed paths:** `CatalogMutationAdmissionGate.cs`; `CatalogDb.cs`; `src/Neuterradise.App/App.xaml.cs`; `ShutdownCoordinator.cs`; mutating Profile/ProfileAppearance/UnknownResolution/Media/Trash/Purge/ImportIntake/ImportControl/Verification/Publication/Face/Related/Settings/Taxonomy/Update command boundaries.  
+**Traceability checked:** every mutation family named by X54 plus Verify/taxonomy/related paths found during caller sweep; top-level Close, active lease drain, Finalizer/scheduler/services, clean marker and VaultLock release.  
+**Root-cause correction:** one process-wide re-entrant admission gate is synchronously closed at `ControlledShutdownAsync` entry before the first await. Existing command leases drain before quiescence; ShutdownCoordinator rechecks the same authority before clean-marker/lock release.  
+**Regression guard:** post-Close mutation acquisition throws `MutationAdmissionClosedException`; nested work remains covered by the admitted outer command; clean shutdown requires zero active leases.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static ingress sweep/order trace complete; mutation-storm execution remains R8.  
+**Dependency findings checked:** X20, X22, X23, X52, X55  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 concurrency execution evidence.
+
 ---
 
 ## X55 — Application shutdown deadline and updater parent-wait contract are not one end-to-end deadline
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2529,6 +2681,20 @@ Slow Finalizer, slow persistence, slow filesystem, slow worker shutdown, and upd
 ### Verification
 
 No update attempt can be stranded merely because pre-shutdown work consumed time outside the advertised budget.
+
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `0c501772daccade57cd8f4b7720b17f15dc56852` (command-drain integration finalized `469eee8b14609032cee280f9bf060d858dc98550`)  
+**Primary remediation phase:** R4  
+**Changed paths:** `UpdateCoordinator.cs`; `UpdateManifest.cs`; `UpdateRecoveryPlan.cs`; `UpdateStartupRecovery.cs`; `src/Neuterradise.App/App.xaml.cs`; `src/Neuterradise.Updater/ReplacementEngine.cs`; existing `UpdateHandoffService.cs` transports the trusted handoff.  
+**Traceability checked:** staging/validation, HandoffPending, helper launch, top-level app shutdown work, remaining budget, parent wait, pre-mutation timeout journal and next-start recovery.  
+**Root-cause correction:** handoff carries one absolute `ShutdownDeadlineUtc`; app shutdown and updater parent wait consume the same deadline rather than owning independent clocks. Deadline expiry persists `DeferredShutdownDeadlineExpired` and aborts before InstallRoot mutation; startup recovery retires that safe pre-mutation attempt deterministically.  
+**Regression guard:** updater rejects handoff without deadline; replacement cannot begin before parent exit; timeout cannot become ambiguous partial replacement.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static end-to-end deadline trace complete; slow boundary execution remains R8.  
+**Dependency findings checked:** X22, X47, X48, X54  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 updater/shutdown timing matrix.
 
 ---
 
@@ -2918,7 +3084,7 @@ X65 is resolved only by artifact execution evidence, not by source inference.
 
 ## X66 — Cancellation terminal projection is delayed until recovery polling on cancellation paths
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -2957,6 +3123,20 @@ Test idle cancellation, running cancellation, FaceAnalysis cancellation, depende
 ### Verification
 
 Observe durable job cancellation and its dependent/capability projection in the same control flow or immediate signal-driven turn; a 750 ms timer must not be required for normal correctness.
+
+### R4 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `36d1104d347e0312906d3832ecdacd9cd0d96fe8`  
+**Primary remediation phase:** R4  
+**Changed paths:** `JobScheduler.cs`; `JobCancellationOperations.cs`; `ProductionRuntimeRegistry.cs`.  
+**Traceability checked:** running cancelled completion, idle cancellation, Stage2CompletionHandler, dependency cascade and reconciliation fallback.  
+**Root-cause correction:** persisted CANCELLED invokes the terminal observer immediately for running completion and idle cancellation. Capability/dependency/readiness projection no longer depends on the periodic reconciliation interval in the normal path.  
+**Regression guard:** observer failure cannot corrupt durable job truth; reconciliation remains the repair fallback.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static observer/wiring trace complete; timing execution remains R8.  
+**Dependency findings checked:** X19, X25, X26, X68  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** R8 projection timing matrix.
 
 ---
 
@@ -3119,6 +3299,14 @@ Focused import priority affects the shared work it actually waits on, without al
 **Source status:** SOURCE-CLOSED (CORRECTED)  
 **Runtime status:** NOT-YET-VERIFIED — multi-consumer scheduler execution remains R4/R8 evidence.
 
+### R4 integration revalidation record — 2026-09-19
+
+**Revalidated source SHA:** `469eee8b14609032cee280f9bf060d858dc98550`  
+**Primary remediation phase remains:** R2  
+**R4 integration checked:** focus eligibility still resolves Asset work through durable `import_asset_interests`; R4 terminal-state cleanup recomputes shared priority from other live consumers before releasing the finishing unit's interest. Candidate-only focus authority was not reintroduced.  
+**Source status:** SOURCE-CLOSED from R2; NO R4 REIMPLEMENTATION  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** shared-interest executable concurrency remains R8.
 
 ---
 
@@ -3363,6 +3551,14 @@ Cancelling one ImportUnit can never retire/trash an asset that another live impo
 **Source status:** SOURCE-CLOSED (CORRECTED)  
 **Runtime status:** NOT-YET-VERIFIED — concurrent cancellation/Trash execution remains R4/R8 evidence.
 
+### R4 integration revalidation record — 2026-09-19
+
+**Revalidated source SHA:** `469eee8b14609032cee280f9bf060d858dc98550`  
+**Primary remediation phase remains:** R2  
+**R4 integration checked:** per-unit serialization and terminal-interest cleanup do not weaken R2 cancellation reservations/exclusivity. Shared Asset consumer evidence continues to prevent another live import's reused Asset from being classified as exclusive rollback material.  
+**Source status:** SOURCE-CLOSED from R2; NO R4 REIMPLEMENTATION  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** multi-import cancellation execution remains R8.
 
 ---
 
@@ -3641,6 +3837,8 @@ Acceptance:
 - no physical recovery evidence is destroyed before final dependency closure.
 
 ## Phase R4 — Fix scheduler and lifecycle concurrency
+
+**Implementation status — 2026-09-19:** SOURCE-CLOSED through `469eee8b14609032cee280f9bf060d858dc98550`. Primary findings X19–X26, X52–X55, and X66 are SOURCE-CLOSED after corrective static revalidation. R2-owned companions X69/X73 were revalidated without duplicate implementation. X51 remains REJECTED. This does not claim build/test/runtime/fault-injection acceptance; executable evidence remains R8 under AGENTS.md.
 
 Primary target:
 
