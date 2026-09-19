@@ -16,6 +16,7 @@ namespace Neuterradise.App.Profiles;
 
 public sealed class UnknownResolutionOperations
 {
+    private readonly CatalogDb _catalog;
     private readonly CatalogConnectionFactory _connectionFactory;
     private readonly CatalogWriteCoordinator _writeCoordinator;
     private readonly VaultPaths _paths;
@@ -32,6 +33,7 @@ public sealed class UnknownResolutionOperations
         StorageTokenAllocator? tokenAllocator = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         _connectionFactory = catalog.ConnectionFactory;
         _writeCoordinator = catalog.WriteCoordinator;
         _paths = catalog.Paths;
@@ -45,6 +47,7 @@ public sealed class UnknownResolutionOperations
         AssignUnknownAssetsToProfileRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(AssignUnknownAssetsToProfileAsync));
         ArgumentNullException.ThrowIfNull(request);
         if (request.SourceUnknownProfileId == Guid.Empty)
         {
@@ -496,6 +499,7 @@ public sealed class UnknownResolutionOperations
         long expectedClusterRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(KeepAssignmentClusterUnknownAsync));
         if (sourceUnknownProfileId == Guid.Empty || clusterId == Guid.Empty)
         {
             return OperationResult.Validation("INVALID_ASSIGNMENT_CLUSTER", "The assignment group is invalid.");
@@ -812,6 +816,7 @@ public sealed class UnknownResolutionOperations
         CreateProfileFromUnknownAssetsRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(CreateProfileFromUnknownAssetsAsync));
         ArgumentNullException.ThrowIfNull(request);
         if (request.SourceUnknownProfileId == Guid.Empty)
         {

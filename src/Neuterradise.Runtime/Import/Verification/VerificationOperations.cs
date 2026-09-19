@@ -42,6 +42,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(UpdateDraftAsync));
         if (unitId == Guid.Empty)
         {
             throw new ArgumentException("A stable identifier cannot be empty.", nameof(unitId));
@@ -159,6 +160,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetStepAsync));
         if (step is < 1 or > 5)
         {
             throw new ArgumentOutOfRangeException(nameof(step), "Step must be between 1 and 5.");
@@ -179,6 +181,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetDestinationAsync));
         ArgumentNullException.ThrowIfNull(destination);
         var model = await LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false)
             ?? throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
@@ -195,6 +198,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetAppearanceAsync));
         ArgumentNullException.ThrowIfNull(appearance);
         var model = await LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false)
             ?? throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
@@ -211,6 +215,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(StageFaceDecisionAsync));
         ArgumentNullException.ThrowIfNull(decision);
         var model = await LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false)
             ?? throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
@@ -229,6 +234,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RemoveStagedFaceDecisionAsync));
         var model = await LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false)
             ?? throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
 
@@ -244,6 +250,7 @@ public sealed class VerificationOperations
         long expectedRowVersion,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ClearStagedFaceDecisionsAsync));
         var model = await LoadVerificationReadModelAsync(unitId, cancellationToken).ConfigureAwait(false)
             ?? throw new CatalogInvariantException($"ImportUnit {unitId:D} does not exist.");
 
@@ -560,6 +567,7 @@ public sealed class VerificationOperations
         Guid? reusedAssetId = null,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetItemDispositionAsync));
         if (duplicateDecision is { } decision)
         {
             await _importWrites.ApplyDuplicateDecisionAsync(
@@ -590,6 +598,7 @@ public sealed class VerificationOperations
         ItemDisposition disposition,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(SetBatchItemDispositionsAsync));
         ArgumentNullException.ThrowIfNull(importItemIds);
         if (importItemIds.Count == 0)
         {
@@ -625,6 +634,7 @@ public sealed class VerificationOperations
         Guid? reusedAssetId = null,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(ApplyDuplicateDecisionAsync));
         await _importWrites.ApplyDuplicateDecisionAsync(
             importItemId,
             DbEnum.DispositionFor(decision),

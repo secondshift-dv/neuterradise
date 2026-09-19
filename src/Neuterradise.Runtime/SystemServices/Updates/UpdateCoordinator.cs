@@ -20,6 +20,7 @@ public sealed class UpdateCoordinator : IDisposable
     public const string StatusPreparing = "preparing";
     public const string StatusRestarting = "restarting";
 
+    private readonly CatalogMutationAdmissionGate _mutationAdmission;
     private readonly AppConfigurationStore _configuration;
     private readonly AppStatePaths _appState;
     private readonly InstallPaths _install;
@@ -41,6 +42,7 @@ public sealed class UpdateCoordinator : IDisposable
     private bool _disposed;
 
     public UpdateCoordinator(
+        CatalogMutationAdmissionGate mutationAdmission,
         AppConfigurationStore configuration,
         AppStatePaths appState,
         InstallPaths install,
@@ -53,6 +55,7 @@ public sealed class UpdateCoordinator : IDisposable
         UpdateHandoffService handoff,
         Action<DateTimeOffset> requestControlledShutdown)
     {
+        _mutationAdmission = mutationAdmission ?? throw new ArgumentNullException(nameof(mutationAdmission));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _appState = appState ?? throw new ArgumentNullException(nameof(appState));
         _install = install ?? throw new ArgumentNullException(nameof(install));
@@ -97,6 +100,7 @@ public sealed class UpdateCoordinator : IDisposable
         string feedText,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _mutationAdmission.Enter(nameof(SaveFeedAsync));
         ObjectDisposedException.ThrowIf(_disposed, this);
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -286,6 +290,7 @@ public sealed class UpdateCoordinator : IDisposable
     public async Task<UpdateCommandResult> DownloadAndInstallAsync(
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _mutationAdmission.Enter(nameof(DownloadAndInstallAsync));
         ObjectDisposedException.ThrowIf(_disposed, this);
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -431,6 +436,7 @@ public sealed class UpdateCoordinator : IDisposable
         bool userConfirmedLocalPackage,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _mutationAdmission.Enter(nameof(InstallFromLocalPackageAsync));
         ObjectDisposedException.ThrowIf(_disposed, this);
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try

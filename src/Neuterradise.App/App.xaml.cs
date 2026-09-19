@@ -500,6 +500,7 @@ public partial class App : Application
         var updateStager = new UpdatePackageStager(_appState!, updateValidator);
         var updateHandoff = new UpdateHandoffService(_appState!, _install!);
         _updateCoordinator = new UpdateCoordinator(
+            context.Catalog.MutationAdmission,
             _configuration!,
             _appState!,
             _install!,

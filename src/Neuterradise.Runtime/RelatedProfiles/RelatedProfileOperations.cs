@@ -27,6 +27,7 @@ public sealed class RelatedProfileOperations
         Guid profileIdB,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(AddManualRelatedProfileAsync));
         if (profileIdA == Guid.Empty || profileIdB == Guid.Empty)
         {
             return OperationResult.Validation(
@@ -85,6 +86,7 @@ public sealed class RelatedProfileOperations
         Guid profileIdB,
         CancellationToken cancellationToken = default)
     {
+        using var mutationAdmission = _catalog.MutationAdmission.Enter(nameof(RemoveManualRelatedProfileAsync));
         if (profileIdA == Guid.Empty || profileIdB == Guid.Empty)
         {
             return OperationResult.Validation(
