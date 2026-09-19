@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using Neuterradise.App.Media;
+using Neuterradise.App.Media.Model;
 using Neuterradise.App.Profiles;
 using Neuterradise.App.SystemServices.Database;
 using Neuterradise.App.SystemServices.Storage;
@@ -372,6 +373,105 @@ public sealed class LibraryHealthEvaluator
 
             if (string.IsNullOrWhiteSpace(asset.StorageToken))
             {
+
+                continue;
+            }
+
+            var packageComponents = asset.MediaType == MediaType.Model
+                ? await _catalog.AssetWrites.GetAssetComponentsAsync(asset.AssetId, cancellationToken)
+                    .ConfigureAwait(false)
+                : Array.Empty<AssetComponentRecord>();
+            var isPackage = packageComponents.Count > 1
+                || packageComponents.Any(component => component.ComponentRole == ComponentRole.Dependency);
+
+            if (isPackage)
+            {
+                if (string.IsNullOrWhiteSpace(asset.CurrentManagedRelativePath))
+                {
+                    findings.Add(new HealthFinding(
+                        HealthFindingCode.ManagedPathMismatch,
+                        HealthSeverity.Error,
+                        asset.OwnerProfileId,
+                        asset.AssetId,
+                        null,
+                        null,
+                        $"Package asset {asset.AssetId} has no authoritative managed package directory.",
+                        RepairAvailable: false));
+                    continue;
+                }
+
+                foreach (var component in packageComponents)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string componentPath;
+                    try
+                    {
+                        componentPath = _paths.ResolveVaultRelativePath(
+                            $"{asset.CurrentManagedRelativePath}/{component.ComponentRelativePath}");
+                    }
+                    catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                    {
+                        findings.Add(new HealthFinding(
+                            HealthFindingCode.ManagedPathMismatch,
+                            HealthSeverity.Critical,
+                            asset.OwnerProfileId,
+                            asset.AssetId,
+                            null,
+                            null,
+                            $"Package component '{component.ComponentRelativePath}' resolves outside canonical Vault authority.",
+                            RepairAvailable: false));
+                        continue;
+                    }
+
+                    knownAssetFileNames.Add(Path.GetFileName(componentPath));
+                    if (!File.Exists(componentPath))
+                    {
+                        findings.Add(new HealthFinding(
+                            HealthFindingCode.ManagedPathMismatch,
+                            HealthSeverity.Error,
+                            asset.OwnerProfileId,
+                            asset.AssetId,
+                            null,
+                            null,
+                            $"Required package component '{component.ComponentRelativePath}' is missing.",
+                            RepairAvailable: true));
+                        continue;
+                    }
+
+                    var info = new FileInfo(componentPath);
+                    if (info.Length != component.ByteLength)
+                    {
+                        findings.Add(new HealthFinding(
+                            HealthFindingCode.ContentMismatch,
+                            HealthSeverity.Critical,
+                            asset.OwnerProfileId,
+                            asset.AssetId,
+                            null,
+                            null,
+                            $"Package component '{component.ComponentRelativePath}' length does not match durable component authority.",
+                            RepairAvailable: false));
+                        continue;
+                    }
+
+                    if (opts.Mode == HealthScanMode.Deep)
+                    {
+                        await using var componentStream = File.OpenRead(componentPath);
+                        var componentHash = Convert.ToHexStringLower(
+                            await SHA256.HashDataAsync(componentStream, cancellationToken).ConfigureAwait(false));
+                        if (!string.Equals(componentHash, component.Sha256, StringComparison.Ordinal))
+                        {
+                            findings.Add(new HealthFinding(
+                                HealthFindingCode.ContentMismatch,
+                                HealthSeverity.Critical,
+                                asset.OwnerProfileId,
+                                asset.AssetId,
+                                null,
+                                null,
+                                $"Package component '{component.ComponentRelativePath}' SHA-256 does not match durable component authority.",
+                                RepairAvailable: false));
+                        }
+                    }
+                }
 
                 continue;
             }

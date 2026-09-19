@@ -489,26 +489,50 @@ public sealed class RestoreExecutor
                     ?.ComponentRelativePath
                     ?? plan.CurrentManagedFileName;
 
-                var pkgPlan = _pathPlanner.PlanModelPackage(
+                var pkgPlan = _pathPlanner.AllocateModelPackagePlan(
                     owner.ProfileId,
                     owner.Label,
                     new ProfileStorageToken(owner.StorageToken),
                     asset.AssetId,
                     new AssetStorageToken(asset.StorageToken!),
-                    primaryComponentPath);
+                    primaryComponentPath,
+                    candidate =>
+                    {
+                        try
+                        {
+                            return Directory.Exists(_catalog.Paths.ResolveVaultRelativePath(
+                                candidate.PackageDirectoryRelativePath));
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                        {
+                            return true;
+                        }
+                    });
                 return RestoreTargetResult.Accepted(
                     pkgPlan.PackageDirectoryRelativePath,
                     pkgPlan.PrimaryFileName);
             }
 
-            var planned = _pathPlanner.PlanAsset(
+            var planned = _pathPlanner.AllocateAssetPlan(
                 owner.ProfileId,
                 owner.Label,
                 new ProfileStorageToken(owner.StorageToken),
                 asset.AssetId,
                 new AssetStorageToken(asset.StorageToken!),
                 asset.MediaType,
-                Path.GetExtension(plan.CurrentManagedFileName));
+                Path.GetExtension(plan.CurrentManagedFileName),
+                candidate =>
+                {
+                    try
+                    {
+                        return File.Exists(_catalog.Paths.ResolveVaultRelativePath(
+                            candidate.ManagedFileRelativePath!));
+                    }
+                    catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                    {
+                        return true;
+                    }
+                });
             var targetFilePath = planned.ManagedFileRelativePath!;
             return RestoreTargetResult.Accepted(
                 targetFilePath[..targetFilePath.LastIndexOf('/')],

@@ -1047,7 +1047,24 @@ public sealed class JobWrites
                   JOIN import_units u ON u.import_unit_id = i.import_unit_id
                   WHERE i.candidate_asset_id IS NOT NULL
                     AND u.is_paused = 1
-                    AND u.state NOT IN ('COMMITTED','COMPLETED','CANCELLED','FAILED_TERMINAL'));
+                    AND u.state NOT IN ('COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION','CANCELLED','FAILED_TERMINAL')
+                  UNION
+                  SELECT interest.asset_id
+                  FROM import_asset_interests interest
+                  JOIN import_units u ON u.import_unit_id = interest.import_unit_id
+                  WHERE u.is_paused = 1
+                    AND u.state NOT IN ('COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION','CANCELLED','FAILED_TERMINAL'))
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.asset_id = jobs.owner_id
+                    AND consumer.is_paused = 0
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              );
             """))
         {
             await pausedUpdate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -1070,7 +1087,22 @@ public sealed class JobWrites
                   FROM import_items i
                   JOIN import_units u ON u.import_unit_id = i.import_unit_id
                   WHERE i.candidate_asset_id IS NOT NULL
-                    AND u.state = 'CANCELLED');
+                    AND u.state = 'CANCELLED'
+                  UNION
+                  SELECT interest.asset_id
+                  FROM import_asset_interests interest
+                  JOIN import_units u ON u.import_unit_id = interest.import_unit_id
+                  WHERE u.state = 'CANCELLED')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.asset_id = jobs.owner_id
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              );
             """))
         {
             await cancelledUpdate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -1092,7 +1124,22 @@ public sealed class JobWrites
                   FROM import_items i
                   JOIN import_units u ON u.import_unit_id = i.import_unit_id
                   WHERE i.candidate_asset_id IS NOT NULL
-                    AND u.state = 'FAILED_TERMINAL');
+                    AND u.state = 'FAILED_TERMINAL'
+                  UNION
+                  SELECT interest.asset_id
+                  FROM import_asset_interests interest
+                  JOIN import_units u ON u.import_unit_id = interest.import_unit_id
+                  WHERE u.state = 'FAILED_TERMINAL')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.asset_id = jobs.owner_id
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              );
             """))
         {
             await terminalUpdate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

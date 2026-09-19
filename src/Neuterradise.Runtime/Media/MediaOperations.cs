@@ -189,16 +189,37 @@ public sealed class MediaOperations
 
             string targetRelativePath;
             string targetFileName;
+            var occupiedTargets = await ReadOccupiedManagedTargetsAsync(
+                transaction,
+                asset.AssetId,
+                cancellationToken).ConfigureAwait(false);
             try
             {
-                var plan = _pathPlanner.PlanAsset(
+                var plan = _pathPlanner.AllocateAssetPlan(
                     destination.ProfileId,
                     destination.Label,
                     new ProfileStorageToken(destination.StorageToken),
                     asset.AssetId,
                     new AssetStorageToken(asset.StorageToken),
                     asset.MediaType,
-                    Path.GetExtension(asset.CurrentManagedFileName));
+                    Path.GetExtension(asset.CurrentManagedFileName),
+                    candidate =>
+                    {
+                        var relative = candidate.ManagedFileRelativePath!.Replace('\\', '/');
+                        if (occupiedTargets.Contains(relative))
+                        {
+                            return true;
+                        }
+
+                        try
+                        {
+                            return File.Exists(_paths.ResolveVaultRelativePath(relative));
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+                        {
+                            return true;
+                        }
+                    });
 
                 var targetFilePath = plan.ManagedFileRelativePath!;
                 targetRelativePath = targetFilePath[..targetFilePath.LastIndexOf('/')];
@@ -850,6 +871,36 @@ public sealed class MediaOperations
             label,
             reader.IsDBNull(3) ? null : reader.GetString(3),
             !reader.IsDBNull(4));
+    }
+
+    private static async Task<HashSet<string>> ReadOccupiedManagedTargetsAsync(
+        CatalogTransaction transaction,
+        Guid assetId,
+        CancellationToken cancellationToken)
+    {
+        var occupied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var command = transaction.CreateCommand(
+            """
+            SELECT current_managed_relative_path || '/' || current_managed_file_name
+            FROM assets
+            WHERE asset_id <> $assetId
+              AND current_managed_relative_path IS NOT NULL
+              AND current_managed_file_name IS NOT NULL
+            UNION
+            SELECT target_managed_relative_path || '/' || target_managed_file_name
+            FROM assets
+            WHERE asset_id <> $assetId
+              AND target_managed_relative_path IS NOT NULL
+              AND target_managed_file_name IS NOT NULL;
+            """);
+        command.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            occupied.Add(reader.GetString(0).Replace('\\', '/'));
+        }
+
+        return occupied;
     }
 
     private static async Task<bool> RelationExistsAsync(

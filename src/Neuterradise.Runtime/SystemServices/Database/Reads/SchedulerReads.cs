@@ -292,23 +292,52 @@ public sealed class SchedulerReads
         command.CommandText =
             """
             SELECT j.job_id
-            FROM import_items i
-            JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = i.candidate_asset_id
-            WHERE i.import_unit_id = $unitId
-              AND i.candidate_asset_id IS NOT NULL
+            FROM import_items item
+            JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = item.candidate_asset_id
+            WHERE item.import_unit_id = $unitId
+              AND item.candidate_asset_id IS NOT NULL
               AND j.state = 'RUNNING'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.asset_id = j.owner_id
+                    AND other.import_unit_id <> $unitId
+                    AND consumer.is_paused = 0
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              )
             UNION
-            SELECT job_id FROM jobs
-            WHERE owner_type = 'ImportUnit' AND owner_id = $unitId AND state = 'RUNNING';
+            SELECT j.job_id
+            FROM import_asset_interests mine
+            JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = mine.asset_id
+            WHERE mine.import_unit_id = $unitId
+              AND j.state = 'RUNNING'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.asset_id = mine.asset_id
+                    AND other.import_unit_id <> $unitId
+                    AND consumer.is_paused = 0
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              )
+            UNION
+            SELECT job_id
+            FROM jobs
+            WHERE owner_type = 'ImportUnit'
+              AND owner_id = $unitId
+              AND state = 'RUNNING';
             """;
         command.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));
         return await ReadGuidListAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Counts currently RUNNING jobs belonging to one ImportUnit. Used during Cancel to wait
-    /// for running handlers to reach a safe boundary before storage rollback begins.
-    /// </summary>
     public async Task<int> CountRunningJobsForImportUnitAsync(
         Guid importUnitId,
         CancellationToken cancellationToken = default)
@@ -322,14 +351,47 @@ public sealed class SchedulerReads
             SELECT COUNT(*)
             FROM (
                 SELECT j.job_id
-                FROM import_items i
-                JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = i.candidate_asset_id
-                WHERE i.import_unit_id = $unitId
-                  AND i.candidate_asset_id IS NOT NULL
+                FROM import_items item
+                JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = item.candidate_asset_id
+                WHERE item.import_unit_id = $unitId
+                  AND item.candidate_asset_id IS NOT NULL
                   AND j.state = 'RUNNING'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM import_asset_interests other
+                      JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                      WHERE other.asset_id = j.owner_id
+                        AND other.import_unit_id <> $unitId
+                        AND consumer.is_paused = 0
+                        AND consumer.state NOT IN (
+                            'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                            'CANCELLED','FAILED_TERMINAL'
+                        )
+                  )
                 UNION
-                SELECT job_id FROM jobs
-                WHERE owner_type = 'ImportUnit' AND owner_id = $unitId AND state = 'RUNNING'
+                SELECT j.job_id
+                FROM import_asset_interests mine
+                JOIN jobs j ON j.owner_type = 'Asset' AND j.owner_id = mine.asset_id
+                WHERE mine.import_unit_id = $unitId
+                  AND j.state = 'RUNNING'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM import_asset_interests other
+                      JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                      WHERE other.asset_id = mine.asset_id
+                        AND other.import_unit_id <> $unitId
+                        AND consumer.is_paused = 0
+                        AND consumer.state NOT IN (
+                            'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                            'CANCELLED','FAILED_TERMINAL'
+                        )
+                  )
+                UNION
+                SELECT job_id
+                FROM jobs
+                WHERE owner_type = 'ImportUnit'
+                  AND owner_id = $unitId
+                  AND state = 'RUNNING'
             );
             """;
         command.Parameters.AddWithValue("$unitId", DbGuid.Format(importUnitId));

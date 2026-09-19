@@ -214,19 +214,46 @@ internal sealed class ImportCancellationSettlement
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT DISTINCT i.candidate_asset_id
-            FROM import_items i
-            JOIN assets a ON a.asset_id = i.candidate_asset_id
-            WHERE i.import_unit_id = $unitId
-              AND i.candidate_asset_id IS NOT NULL
-              AND a.state = 'ACTIVE'
-              AND i.candidate_asset_id NOT IN (
-                  SELECT reused_asset_id
-                  FROM import_items
-                  WHERE import_unit_id = $unitId
-                    AND reused_asset_id IS NOT NULL
+            SELECT DISTINCT item.candidate_asset_id
+            FROM import_items item
+            JOIN assets asset ON asset.asset_id = item.candidate_asset_id
+            JOIN import_units self ON self.import_unit_id = item.import_unit_id
+            WHERE item.import_unit_id = $unitId
+              AND item.candidate_asset_id IS NOT NULL
+              AND asset.state = 'ACTIVE'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_items other
+                  JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                  WHERE other.import_unit_id <> $unitId
+                    AND (other.candidate_asset_id = item.candidate_asset_id
+                         OR other.reused_asset_id = item.candidate_asset_id)
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
               )
-            ORDER BY i.candidate_asset_id;
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM import_asset_interests interest
+                  JOIN import_units consumer ON consumer.import_unit_id = interest.import_unit_id
+                  WHERE interest.asset_id = item.candidate_asset_id
+                    AND interest.import_unit_id <> $unitId
+                    AND consumer.state NOT IN (
+                        'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                        'CANCELLED','FAILED_TERMINAL'
+                    )
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM profile_assets relation
+                  WHERE relation.asset_id = item.candidate_asset_id
+                    AND (
+                        self.destination_profile_id IS NULL
+                        OR relation.profile_id <> self.destination_profile_id
+                    )
+              )
+            ORDER BY item.candidate_asset_id;
             """;
         command.Parameters.AddWithValue("$unitId", DbGuid.Format(unitId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
