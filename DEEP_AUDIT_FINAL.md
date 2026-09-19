@@ -655,7 +655,7 @@ Database OWNER and final managed path must converge after every injected crash b
 
 ## X06 — Asset Trash fails when APPEARS or MANUAL relations remain
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -700,11 +700,26 @@ Invariant after terminal Trash: no active relation violates trg_assets_nonactive
 
 Fault-injected Trash/Restore plus restart on every durable boundary.
 
+
+### R3 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `0e0aa2bc2c4218146f3a548bc1175904efe68220` (source implementation chain: `c82ab6997dbdd9155bff41acdfcad3b5a465eae4` → `0b8d6e1ef14152107db1e21c7c4aecd12d548454` → `0e0aa2bc2c4218146f3a548bc1175904efe68220`)  
+**Primary remediation phase:** R3  
+**Changed paths:** `src/Neuterradise.Runtime/Trash/TrashPlan.cs`; `src/Neuterradise.Runtime/Trash/TrashCoordinator.cs`; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0014_r3_trash_profile_lifecycle.sql`.  
+**Traceability checked:** original Section 4B targets plus the live R2 reservation/publication authorities and recovery callers on the closing SHA.  
+**Root-cause correction:** Asset Trash now snapshots the complete `profile_assets` relation graph (OWNER/APPEARS/MANUAL, provenance, publication attribution) and Hero references inside the terminal catalog transaction, clears every blocking relation before `ACTIVE→TRASHED`, persists that exact restore provenance in the Trash plan, and restores semantically available relations/Hero slots after the Asset is reactivated. R2 Trash reservations remain the admission authority; R3 adds mutation/Hero guards so the snapshot cannot gain new authority during the physical/DB gap.  
+**Regression guard:** Database triggers remain enabled; R3 migration blocks relation mutation and new Hero acquisition while Asset Trash is PENDING/EXECUTING, while the terminal transaction deletes all remaining relations before the existing non-ACTIVE relation trigger can fire.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/authority/recovery trace completed; the fault-injection/restart matrix remains R8 executable evidence under AGENTS.md.  
+**Dependency findings checked:** X05, X17, X69, X73  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
+
 ---
 
 ## X07 — NORMAL Profile Trash violates active identity/relation invariants
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -747,11 +762,26 @@ Terminal Trash must prove no active identity/relation authority remains.
 
 DB trigger remains enabled. Tests must pass with the real invariant, not by disabling the trigger.
 
+
+### R3 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `0e0aa2bc2c4218146f3a548bc1175904efe68220` (source implementation chain: `c82ab6997dbdd9155bff41acdfcad3b5a465eae4` → `0b8d6e1ef14152107db1e21c7c4aecd12d548454` → `0e0aa2bc2c4218146f3a548bc1175904efe68220`)  
+**Primary remediation phase:** R3  
+**Changed paths:** `src/Neuterradise.Runtime/Trash/TrashPlan.cs`; `src/Neuterradise.Runtime/Trash/TrashCoordinator.cs`; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0014_r3_trash_profile_lifecycle.sql`.  
+**Traceability checked:** original Section 4B targets plus the live R2 reservation/publication authorities and recovery callers on the closing SHA.  
+**Root-cause correction:** Profile Trash now durably records the chosen owned-Asset dispositions before executing them, snapshots all remaining Profile relations plus the active identity before the terminal marker, removes those relations, retires the active identity, and only then writes `trashed_at_ms`. Restore first reactivates the Profile, then reconstructs still-valid APPEARS/MANUAL relations and the prior active identity from durable provenance.  
+**Regression guard:** R3 migration prevents new/retained relation mutations and new active identities from entering a Profile while its Trash entry is PENDING/EXECUTING, but deliberately permits OWNER movement away from the source Profile so the lifecycle can resolve dispositions. Existing DB invariants remain enabled.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/authority/recovery trace completed; the fault-injection/restart matrix remains R8 executable evidence under AGENTS.md.  
+**Dependency findings checked:** X06, X08, X04, X05  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
+
 ---
 
 ## X08 — Profile Trash/Restore is not restart-convergent
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -780,6 +810,21 @@ Crash-inject at every boundary and restart repeatedly. Reconciliation must conve
 ### Verification
 
 Automated restart matrix for Profile Trash and Profile Restore.
+
+
+### R3 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `0e0aa2bc2c4218146f3a548bc1175904efe68220` (source implementation chain: `c82ab6997dbdd9155bff41acdfcad3b5a465eae4` → `0b8d6e1ef14152107db1e21c7c4aecd12d548454` → `0e0aa2bc2c4218146f3a548bc1175904efe68220`)  
+**Primary remediation phase:** R3  
+**Changed paths:** `src/Neuterradise.Runtime/Trash/TrashPlan.cs`; `src/Neuterradise.Runtime/Trash/TrashCoordinator.cs`; `src/Neuterradise.Runtime/Trash/RestoreExecutor.cs`; `src/Neuterradise.Runtime/SystemServices/Recovery/TrashRecovery.cs`.  
+**Traceability checked:** original Section 4B targets plus the live R2 reservation/publication authorities and recovery callers on the closing SHA.  
+**Root-cause correction:** Profile Trash now transitions to durable EXECUTING with persisted dispositions before any owned-Asset work, checkpoints the Profile recovery-manifest destination before the terminal marker, and Profile Restore persists its recovery/target checkpoint before physical restore. `TrashRecovery` now resumes interrupted Profile Trash and Profile Restore in addition to the pre-existing Asset/Purge branches, so restart has explicit intent and replay state instead of silently ignoring Profile entries.  
+**Regression guard:** Recovery refuses to guess historical executing Profile dispositions that were never durably recorded; such legacy ambiguity becomes typed NeedsAttention rather than false success. Idempotent child Asset Trash/owner-transfer behavior is reused during Profile replay.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/authority/recovery trace completed; the fault-injection/restart matrix remains R8 executable evidence under AGENTS.md.  
+**Dependency findings checked:** X06, X07, X22, X23  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
 
 ---
 
@@ -1784,7 +1829,7 @@ No request-local index leak after terminal completion.
 
 ## X37 — Profile Purge FK closure omits import_assignment_clusters references
 
-**Status:** CONFIRMED-SOURCE / OPEN-IMPLEMENTATION
+**Status:** CONFIRMED-SOURCE / SOURCE-CLOSED
 
 ### Temuan
 
@@ -1825,6 +1870,21 @@ Terminal purge invariant: zero dangling references.
 ### Verification
 
 Purge cannot delete recovery material and then fail on a previously omitted FK.
+
+
+### R3 implementation closure record — 2026-09-19
+
+**Implementation SHA:** `0e0aa2bc2c4218146f3a548bc1175904efe68220` (source implementation chain: `c82ab6997dbdd9155bff41acdfcad3b5a465eae4` → `0b8d6e1ef14152107db1e21c7c4aecd12d548454` → `0e0aa2bc2c4218146f3a548bc1175904efe68220`)  
+**Primary remediation phase:** R3  
+**Changed paths:** `src/Neuterradise.Runtime/Trash/PurgeExecutor.cs`; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0014_r3_trash_profile_lifecycle.sql`.  
+**Traceability checked:** original Section 4B targets plus the live R2 reservation/publication authorities and recovery callers on the closing SHA.  
+**Root-cause correction:** Profile Purge now treats every `import_assignment_clusters.candidate_profile_id` or `decided_profile_id` reference as a blocking dependency before irreversible deletion, includes both reference classes in the affected-data snapshot, and does not null an ACCEPTED decision (or candidate evidence) behind the assignment domain's back. After a purge authorization exists, DB triggers prevent a new candidate/decision reference from being attached to that Profile; Confirm revalidates the zero-reference condition before the first physical delete.  
+**Regression guard:** The purge plan remains fail-closed: assignment references must be zero, the persisted PURGE_PROFILE reservation freezes new references, and the final DB deletion revalidates the same dependency/snapshot authority. Recovery bytes therefore cannot be destroyed and only afterward discover one of the previously omitted assignment-cluster FKs.  
+**Verification result:** PENDING-EXECUTION-AUTHORIZATION — static source/authority/recovery trace completed; the fault-injection/restart matrix remains R8 executable evidence under AGENTS.md.  
+**Dependency findings checked:** X08, X52, X54  
+**Source status:** SOURCE-CLOSED  
+**Runtime status:** NOT-YET-VERIFIED  
+**Residual risk/blocker:** executable crash/restart and FK-on matrices remain R8 evidence.
 
 ---
 
@@ -3527,6 +3587,8 @@ Acceptance:
 - collision and containment canonical.
 
 ## Phase R3 — Fix Trash/Profile lifecycle
+
+**Implementation status — 2026-09-19:** SOURCE-CLOSED through `0e0aa2bc2c4218146f3a548bc1175904efe68220`. Source implementation landed in `c82ab6997dbdd9155bff41acdfcad3b5a465eae4`, was corrected for Profile OWNER move-away and assignment-cluster purge authority in `0b8d6e1ef14152107db1e21c7c4aecd12d548454`, and received the concurrent-Hero guard correction in `0e0aa2bc2c4218146f3a548bc1175904efe68220`. X06, X07, X08, and X37 are SOURCE-CLOSED. Runtime/fault-injection acceptance remains R8 and is not implied by this source closure.
 
 Target:
 
