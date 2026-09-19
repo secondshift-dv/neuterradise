@@ -235,7 +235,7 @@ Rules:
 | X20 | `src/Neuterradise.Runtime/Import/ImportFinalizer.cs`, `src/Neuterradise.Runtime/Import/ImportCancellationSettlement.cs`, and `src/Neuterradise.Runtime/Import/Verification/ImportCommitCoordinator.cs` — competing ImportUnit mutation actors. |
 | X21 | `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs` — unit lifecycle writes/CAS authority; callers in Import Finalizer/control/recovery. |
 | X22 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — bounded disposal and context disposal; `src/Neuterradise.Runtime/SystemServices/Recovery/VaultLock.cs` — lock lifetime. |
-| X23 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/SessionMarkerStore.cs` — `WriteUncleanAsync`; `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs` and `ShutdownCoordinator.cs` — lifecycle ordering. |
+| X23 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/SessionMarkerStore.cs` — `WriteUncleanAsync`; `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs` and `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — lifecycle ordering. |
 | X24 | `src/Neuterradise.Runtime/Import/ImportUnitControlAuthority.cs` — Start/Prioritize; `src/Neuterradise.Runtime/SystemServices/Jobs/ImportPriorityOperations.cs` — focus persistence; `src/Neuterradise.Runtime/SystemServices/Database/Writes/ImportUnitWrites.cs` — resume legality. |
 | X25 | `src/Neuterradise.Runtime/SystemServices/Database/Reads/CapabilityReads.cs` — required/terminal aggregation; `src/Neuterradise.Runtime/Import/Preparation/Stage2CompletionHandler.cs` — readiness projection; `src/Neuterradise.Runtime/SystemServices/Database/Writes/CapabilityWrites.cs` — capability state. |
 | X26 | `src/Neuterradise.Runtime/SystemServices/Jobs/JobScheduler.cs` — scheduler shutdown cancellation; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/StorageJobResultMapper.cs` and `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/HashAssetJobHandler.cs` — cancellation-to-job-result mapping on resumable work. |
@@ -246,7 +246,7 @@ Rules:
 | X34 | `src/Neuterradise.Runtime/SystemServices/Jobs/ProfilingWorkerProcessHost.cs` — `ConsecutiveFailures`, Ready handshake, restart breaker. |
 | X35 | `src/Neuterradise.Profiling.Protocol/ProfilingProtocol.cs` — frame maximum; `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — `BuildIdentityIndexRequest` producer; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — consumer. |
 | X36 | `src/Neuterradise.Runtime/SystemServices/Jobs/Handlers/FaceAnalysisJobHandler.cs` — Build/Match/ReleaseIndex lifetime; `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs` — ReleaseIndex consumer. |
-| X37 | `src/Neuterradise.Runtime/Trash/PurgeExecutor.cs` and `PurgePlan.cs` — purge dependency/preflight/delete authority; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0003_import_assignment_review.sql` — assignment-cluster FK schema. |
+| X37 | `src/Neuterradise.Runtime/Trash/PurgeExecutor.cs` and `src/Neuterradise.Runtime/Trash/PurgePlan.cs` — purge dependency/preflight/delete authority; `src/Neuterradise.Runtime/SystemServices/Database/Migrations/0003_import_assignment_review.sql` — assignment-cluster FK schema. |
 | X38 | `src/Neuterradise.Runtime/Profiles/ProfileDetailViewModel.cs` — `LoadAsync`, queued `UiDispatch.Run`, final `ShowReady`. |
 | X39 | `src/Neuterradise.Runtime/Settings/SettingsViewModel.cs` — `InitializeAsync` and UI-bound property/collection mutation after background reads. |
 | X40 | `src/Neuterradise.Runtime/Settings/SettingsViewModel.cs` — `ApplyLanguageAsync`; `src/Neuterradise.Runtime/SystemServices/Storage/AppConfigurationStore.cs` — durable preference authority. |
@@ -256,20 +256,20 @@ Rules:
 | X44 | `scripts/package-win-x64.ps1` — package construction/manifest members; `src/Neuterradise.Runtime/SystemServices/Updates/UpdatePackageValidator.cs` — accepted required membership. |
 | X45 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs` — update trust decision/publisher-authenticity boundary. |
 | X46 | `.github/workflows/release.yml` — job permissions and action refs. |
-| X47 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`, `UpdateStartupRecovery.cs`, and `src/Neuterradise.Updater/ReplacementEngine.cs` — operation payload/backup/staging terminal cleanup ownership. |
+| X47 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`, `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStartupRecovery.cs`, and `src/Neuterradise.Updater/ReplacementEngine.cs` — operation payload/backup/staging terminal cleanup ownership. |
 | X48 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStateStore.cs` — persisted-state parsing; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStartupRecovery.cs` — typed recovery consumer. |
 | X49 | `src/Neuterradise.Runtime/SystemServices/Updates/UpdateManifest.cs` — `MinimumCompatibleVersion`; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateTrustPolicy.cs` — compatibility decision. |
 | X50 | `global.json`, `.github/workflows/release.yml`, and project dependency declarations — canonical SDK/dependency resolution authority. |
 | X51 | REJECTED evidence: `src/Neuterradise.Runtime/SystemServices/Recovery/JobRecovery.cs` — final-attempt reconcile/exhaustion path. |
-| X52 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `BootstrapContext.cs`, and `src/Neuterradise.App/App.xaml.cs` — partial-startup resource acquisition/`CleanupPartialStartupAsync`. |
-| X53 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `CriticalIntegrityGate.cs`, and `src/Neuterradise.Runtime/SystemServices/Recovery/StorageRecovery.cs` — recovery severity vs writable-startup safety. |
+| X52 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `src/Neuterradise.Runtime/SystemServices/Lifecycle/BootstrapContext.cs`, and `src/Neuterradise.App/App.xaml.cs` — partial-startup resource acquisition/`CleanupPartialStartupAsync`. |
+| X53 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `src/Neuterradise.Runtime/SystemServices/Lifecycle/CriticalIntegrityGate.cs`, and `src/Neuterradise.Runtime/SystemServices/Recovery/StorageRecovery.cs` — recovery severity vs writable-startup safety. |
 | X54 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — optional `stopAcceptingCommands`; `src/Neuterradise.App/App.xaml.cs` — production shutdown wiring. |
 | X55 | `src/Neuterradise.Runtime/SystemServices/Lifecycle/ShutdownCoordinator.cs` — app budget; `src/Neuterradise.Runtime/SystemServices/Updates/UpdateHandoffService.cs` and `src/Neuterradise.Updater/ReplacementEngine.cs` — updater handoff/parent wait. |
 | X56 | EVIDENCE boundary: `AGENTS.md`, `scripts/build.ps1`, `.github/workflows/release.yml`, and exact remediated source SHA. |
 | X57 | EVIDENCE boundary: `scripts/package-win-x64.ps1`, produced ZIP, extracted layout, and `src/Neuterradise.App/App.xaml.cs` startup path. |
-| X58 | EVIDENCE boundary: `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `AppConfigurationStore.cs`, `VaultPaths.cs`, and a disposable harness that does not yet exist on the frozen tree. |
+| X58 | EVIDENCE boundary: `src/Neuterradise.Runtime/SystemServices/Lifecycle/AppBootstrapper.cs`, `src/Neuterradise.Runtime/SystemServices/Storage/AppConfigurationStore.cs`, `src/Neuterradise.Runtime/SystemServices/Storage/VaultPaths.cs`, and a disposable harness that does not yet exist on the frozen tree. |
 | X59 | EVIDENCE boundary: `scripts/package-win-x64.ps1`; `src/Neuterradise.Profiling.Worker/ProfilingWorkerHost.cs`, `src/Neuterradise.Profiling.Worker/Dispatching/ProfilingRequestDispatcher.cs`, and `src/Neuterradise.Profiling.Worker/FaceAnalysis/FaceAnalyzer.cs`; `src/Neuterradise.Profiling.Protocol/ProfilingContracts.cs` and `src/Neuterradise.Profiling.Protocol/ProfilingProtocol.cs`; plus the packaged YuNet/SFace artifacts. |
-| X60 | EVIDENCE boundary: `src/Neuterradise.Updater/ReplacementEngine.cs`, `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`, `UpdateStartupRecovery.cs`, and a disposable InstallRoot. |
+| X60 | EVIDENCE boundary: `src/Neuterradise.Updater/ReplacementEngine.cs`, `src/Neuterradise.Runtime/SystemServices/Updates/UpdateRecoveryPlan.cs`, `src/Neuterradise.Runtime/SystemServices/Updates/UpdateStartupRecovery.cs`, and a disposable InstallRoot. |
 | X61 | EVIDENCE boundary: finding-specific paths for X01–X60 plus the isolated regression harness required by Section 16; no such complete cross-domain harness exists on the frozen tree. |
 | X62 | AUDIT-CONTROL authority: this `DEEP_AUDIT_FINAL.md` ledger and recoverable historical provenance only; X27–X29 have no fabricated source mapping. |
 | X63 | AUDIT-CONTROL authority: this `DEEP_AUDIT_FINAL.md` immutable ID register and historical Stage 7 alias record. |
@@ -3184,7 +3184,7 @@ Target:
 
 - X30–X36.
 
-Do this after X03 because Worker model topology is an upstream authority.
+Dependency note: X03 remains primary R1 only. R5 begins after X03 is SOURCE-CLOSED because Worker model topology is an upstream authority; this dependency does not make X03 an R5 target.
 
 Acceptance:
 
