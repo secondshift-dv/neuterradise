@@ -9,6 +9,8 @@ public sealed record StartupResult(
 {
     public bool IsReady => State == StartupState.Ready && Context is not null;
 
+    public bool PreservesWritableAuthority => State == StartupState.StartupFailed && Context is not null;
+
     internal static StartupResult Ready(BootstrapContext context, StartupTimingReport timings) =>
         new(StartupState.Ready, context, ErrorCode: null, Exception: null, timings);
 
@@ -17,6 +19,13 @@ public sealed record StartupResult(
         Exception exception,
         StartupTimingReport timings) =>
         new(StartupState.StartupFailed, Context: null, errorCode, exception, timings);
+
+    internal static StartupResult FailedPreservingAuthority(
+        string errorCode,
+        Exception exception,
+        BootstrapContext context,
+        StartupTimingReport timings) =>
+        new(StartupState.StartupFailed, context, errorCode, exception, timings);
 }
 
 public enum StartupStage

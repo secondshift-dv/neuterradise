@@ -51,6 +51,7 @@ public sealed class AppBootstrapper
     public async Task<StartupResult> BootstrapAsync(
         Func<BootstrapContext, CancellationToken, Task>? onReady = null,
         Func<BootstrapContext, CancellationToken, Task>? prewarm = null,
+        Func<CancellationToken, Task>? rollbackActivatedRuntime = null,
         CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _started, 1) != 0)
@@ -64,6 +65,7 @@ public sealed class AppBootstrapper
         var sessionGeneration = Guid.NewGuid();
         UpdateStateStore? updateStore = null;
         var updateRecoveryResult = UpdateStartupRecoveryResult.NoAction();
+        var runtimeActivationBegan = false;
         var timings = new List<StartupStageTiming>();
         var stageStartedAt = Stopwatch.GetTimestamp();
 
@@ -174,6 +176,7 @@ public sealed class AppBootstrapper
 
             if (prewarm is not null)
             {
+                runtimeActivationBegan = true;
                 await prewarm(context, cancellationToken).ConfigureAwait(true);
             }
             CompleteStage(StartupStage.CriticalGateCompleteToPrewarmComplete);
@@ -182,6 +185,7 @@ public sealed class AppBootstrapper
             // failure/cancellation therefore cannot leave an apparently-ready context behind.
             if (onReady is not null)
             {
+                runtimeActivationBegan = true;
                 await onReady(context, cancellationToken).ConfigureAwait(true);
             }
             CompleteStage(StartupStage.PrewarmCompleteToMainWindowShown);
@@ -206,18 +210,50 @@ public sealed class AppBootstrapper
         }
         catch (Exception ex)
         {
-            if (context is not null)
+            var failure = ex;
+            var preserveWritableAuthority = false;
+
+            if (context is not null && runtimeActivationBegan)
             {
-                await context.DisposeAsync().ConfigureAwait(false);
+                if (rollbackActivatedRuntime is null)
+                {
+                    preserveWritableAuthority = true;
+                    failure = new AggregateException(
+                        ex,
+                        new InvalidOperationException(
+                            "Startup activated mutation-capable runtime without a registered rollback authority."));
+                }
+                else
+                {
+                    try
+                    {
+                        await rollbackActivatedRuntime(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        preserveWritableAuthority = true;
+                        failure = new AggregateException(ex, rollbackException);
+                    }
+                }
             }
-            else if (vaultLock is not null)
+
+            if (!preserveWritableAuthority)
             {
-                await vaultLock.DisposeAsync().ConfigureAwait(false);
+                if (context is not null)
+                {
+                    await context.DisposeAsync().ConfigureAwait(false);
+                }
+                else if (vaultLock is not null)
+                {
+                    await vaultLock.DisposeAsync().ConfigureAwait(false);
+                }
             }
 
             TransitionTo(StartupState.StartupFailed);
 
-            var errorCode = ex switch
+            var errorCode = preserveWritableAuthority
+                ? "STARTUP_ROLLBACK_UNSAFE"
+                : ex switch
             {
                 VaultLockUnavailableException => "VAULT_LOCK_UNAVAILABLE",
                 OperationCanceledException => "STARTUP_CANCELLED",
@@ -238,14 +274,14 @@ public sealed class AppBootstrapper
                     : DiagnosticSeverity.Error,
                 DiagnosticCapability,
                 errorCode,
-                SafeErrorDetail: $"{ex.GetType().Name}: {ex.Message}",
+                SafeErrorDetail: $"{failure.GetType().Name}: {failure.Message}",
                 OperationId: _startupOperationId,
                 StateTransition: $"{StartupState.StartupFailed}"));
 
-            return StartupResult.Failed(
-                errorCode,
-                ex,
-                new StartupTimingReport(timings.AsReadOnly()));
+            var timingReport = new StartupTimingReport(timings.AsReadOnly());
+            return preserveWritableAuthority && context is not null
+                ? StartupResult.FailedPreservingAuthority(errorCode, failure, context, timingReport)
+                : StartupResult.Failed(errorCode, failure, timingReport);
         }
     }
 

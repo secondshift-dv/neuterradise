@@ -128,10 +128,18 @@ public partial class App : Application
             var result = await _bootstrapper.BootstrapAsync(
                 onReady: ShowShellAsync,
                 prewarm: PrewarmAsync,
+                rollbackActivatedRuntime: RollbackActivatedStartupAsync,
                 cancellationToken: CancellationToken.None).ConfigureAwait(true);
             if (result.IsReady)
             {
                 _context = result.Context;
+                return;
+            }
+
+            if (result.PreservesWritableAuthority)
+            {
+                _context = result.Context;
+                ShowFailure(result.ErrorCode, result.Exception);
                 return;
             }
 
@@ -148,6 +156,53 @@ public partial class App : Application
         {
             Volatile.Write(ref _bootstrapAttemptActive, 0);
         }
+    }
+
+    private async Task RollbackActivatedStartupAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        HoverVideoCoordinator.Shared.StopAll();
+
+        _shutdown = null;
+
+        _updateCoordinator?.Dispose();
+        _updateCoordinator = null;
+        _updateHttpClient?.Dispose();
+        _updateHttpClient = null;
+
+        _uiScale = null;
+        _placement?.Dispose();
+        _placement = null;
+
+        if (_finalizer is not null)
+        {
+            await _finalizer.DisposeAsync().ConfigureAwait(true);
+            _finalizer = null;
+        }
+
+        if (_importActivity is not null)
+        {
+            await _importActivity.DisposeAsync().ConfigureAwait(true);
+            _importActivity = null;
+        }
+
+        _presentation = null;
+
+        if (_runtime is not null)
+        {
+            await _runtime.DisposeAsync().ConfigureAwait(true);
+            _runtime = null;
+        }
+
+        if (_resourceGovernor is not null)
+        {
+            _resourceGovernor.TrimRequested -= OnTrimRequested;
+        }
+
+        _derivedImages?.Dispose();
+        _derivedImages = null;
+        _resourceGovernor?.Dispose();
+        _resourceGovernor = null;
     }
 
     private async Task CleanupPartialStartupAsync()
