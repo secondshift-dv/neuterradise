@@ -68,9 +68,9 @@ internal sealed class ImportCancellationSettlement
         // post-Stage1 delta to dispose. It is already settled once its jobs are no longer running.
         if (durable.RollbackSettled is null)
         {
-            var runningPreStage1 = await _schedulerReads
-                .CountRunningJobsForImportUnitAsync(unitId, cancellationToken)
-                .ConfigureAwait(false);
+            var runningPreStage1 = (await _schedulerReads
+                .GetCancellableRunningJobIdsForImportUnitAsync(unitId, cancellationToken)
+                .ConfigureAwait(false)).Count;
             return runningPreStage1 == 0
                 ? new ImportCancellationSettlementResult(
                     ImportCancellationSettlementStatus.NotRequired,
@@ -82,9 +82,9 @@ internal sealed class ImportCancellationSettlement
 
         // rollback_settled = 0 is a durable promise that post-Stage1 rollback still needs
         // convergence. Never mutate canonical storage while a handler is still RUNNING.
-        var running = await _schedulerReads
-            .CountRunningJobsForImportUnitAsync(unitId, cancellationToken)
-            .ConfigureAwait(false);
+        var running = (await _schedulerReads
+            .GetCancellableRunningJobIdsForImportUnitAsync(unitId, cancellationToken)
+            .ConfigureAwait(false)).Count;
         if (running > 0)
         {
             return new ImportCancellationSettlementResult(
@@ -116,7 +116,10 @@ internal sealed class ImportCancellationSettlement
                         "CANCEL_ASSET_TRASH_PREPARE_PENDING");
                 }
 
-                var executed = await _trashCoordinator.ExecuteAssetTrashAsync(plan.Value, cancellationToken)
+                var executed = await _trashCoordinator.ExecuteAssetTrashAsync(
+                        plan.Value,
+                        unitId,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 if (!executed.IsSuccess)
                 {
@@ -249,8 +252,8 @@ internal sealed class ImportCancellationSettlement
                   FROM profile_assets relation
                   WHERE relation.asset_id = item.candidate_asset_id
                     AND (
-                        self.destination_profile_id IS NULL
-                        OR relation.profile_id <> self.destination_profile_id
+                        relation.publication_import_unit_id IS NULL
+                        OR relation.publication_import_unit_id <> $unitId
                     )
               )
             ORDER BY item.candidate_asset_id;

@@ -333,35 +333,16 @@ public sealed class ImportCommitCoordinator
                             "The reviewed REUSE decision no longer names both Candidate and managed Asset authority.")]);
                 }
 
-                if (!state.ReusedAssetIds.Contains(reusedId))
-                {
-                    state.ReusedAssetIds.Add(reusedId);
-                }
-
-                var linked = await LinkReusedMediaAsync(
-                        destinationProfileId,
-                        unitId,
-                        reusedId,
-                        currentDraft.Destination.Kind,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (!linked)
-                {
-                    return CommitBlockedResult(
-                        unitId,
-                        state,
-                        [new VerificationBlocker(
-                            item.ItemId,
-                            "REUSE_ASSOCIATION_FAILED",
-                            "The reused Asset could not be associated with the destination under current authority.")]);
-                }
-
-                var retired = await _catalog.ImportWrites.RetireCandidateForReuseAsync(
+                var reused = await _catalog.ImportWrites.CommitReuseAssociationAndRetirementAsync(
                         candidateId,
                         reusedId,
+                        destinationProfileId,
+                        unitId,
+                        allowExistingOwnerOutsideDestination:
+                            currentDraft.Destination.Kind == DestinationKind.SystemUnknown,
                         cancellationToken)
                     .ConfigureAwait(false);
-                if (!retired)
+                if (!reused)
                 {
                     return CommitBlockedResult(
                         unitId,
@@ -369,7 +350,12 @@ public sealed class ImportCommitCoordinator
                         [new VerificationBlocker(
                             item.ItemId,
                             "REUSE_AUTHORITY_STALE",
-                            "The reused Asset changed after verification; the Candidate was preserved for a new duplicate decision.")]);
+                            "The reused Asset or destination authority changed before the atomic reuse commit; the Candidate was preserved.")]);
+                }
+
+                if (!state.ReusedAssetIds.Contains(reusedId))
+                {
+                    state.ReusedAssetIds.Add(reusedId);
                 }
 
                 if (!state.RetiredCandidateIds.Contains(candidateId))
@@ -730,21 +716,7 @@ public sealed class ImportCommitCoordinator
 
         var folderRelative = state.DestinationProfileFolderRelativePath!;
         var absoluteFolder = _vaultPaths.ResolveVaultRelativePath(folderRelative);
-
-        if (Directory.Exists(absoluteFolder))
-        {
-            var inspection = ProfileManifestWriter.InspectManifest(absoluteFolder);
-            if (inspection.Status == ManifestStatus.Valid
-                && inspection.Manifest is not null
-                && inspection.Manifest.ProfileId != profileId)
-            {
-                throw new IOException("The persisted Profile provisioning target belongs to another Profile.");
-            }
-        }
-        else
-        {
-            Directory.CreateDirectory(absoluteFolder);
-        }
+        var provisioningFolder = absoluteFolder + $".{state.OperationId:N}.provisioning";
 
         var profileKind = destinationKind == DestinationKind.SystemUnknown
             ? ProfileKind.Unknown
@@ -759,13 +731,74 @@ public sealed class ImportCommitCoordinator
             BannerAssetId: null,
             _timeProvider.GetUtcNow());
 
-        var writer = new ProfileManifestWriter(_vaultPaths);
-        await writer.WriteManifestAsync(
-                absoluteFolder,
-                manifest,
-                state.OperationId,
-                cancellationToken)
-            .ConfigureAwait(false);
+        if (Directory.Exists(absoluteFolder))
+        {
+            var inspection = ProfileManifestWriter.InspectManifest(absoluteFolder);
+            if (inspection.Status != ManifestStatus.Valid
+                || inspection.Manifest is null
+                || inspection.Manifest.ProfileId != profileId)
+            {
+                throw new IOException(
+                    "The persisted Profile provisioning target exists without matching Profile authority.");
+            }
+        }
+        else
+        {
+            Directory.CreateDirectory(provisioningFolder);
+
+            var stagingInspection = ProfileManifestWriter.InspectManifest(provisioningFolder);
+            if (stagingInspection.Status == ManifestStatus.Valid
+                && stagingInspection.Manifest is not null
+                && stagingInspection.Manifest.ProfileId != profileId)
+            {
+                throw new IOException(
+                    "The operation-scoped Profile provisioning directory contains foreign authority.");
+            }
+
+            var writer = new ProfileManifestWriter(_vaultPaths);
+            await writer.WriteManifestAsync(
+                    provisioningFolder,
+                    manifest,
+                    state.OperationId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                Directory.Move(provisioningFolder, absoluteFolder);
+            }
+            catch (IOException) when (Directory.Exists(absoluteFolder))
+            {
+                var winner = ProfileManifestWriter.InspectManifest(absoluteFolder);
+                if (winner.Status != ManifestStatus.Valid
+                    || winner.Manifest is null
+                    || winner.Manifest.ProfileId != profileId)
+                {
+                    throw new IOException(
+                        "The final Profile provisioning target was claimed by different authority.");
+                }
+
+                if (Directory.Exists(provisioningFolder))
+                {
+                    var ours = ProfileManifestWriter.InspectManifest(provisioningFolder);
+                    if (ours.Status == ManifestStatus.Valid
+                        && ours.Manifest is not null
+                        && ours.Manifest.ProfileId == profileId)
+                    {
+                        Directory.Delete(provisioningFolder, recursive: true);
+                    }
+                }
+            }
+
+            var finalInspection = ProfileManifestWriter.InspectManifest(absoluteFolder);
+            if (finalInspection.Status != ManifestStatus.Valid
+                || finalInspection.Manifest is null
+                || finalInspection.Manifest.ProfileId != profileId)
+            {
+                throw new IOException(
+                    "Profile provisioning did not converge to the persisted destination authority.");
+            }
+        }
 
         await PersistProfileFolderPathAsync(profileId, folderRelative, cancellationToken)
             .ConfigureAwait(false);

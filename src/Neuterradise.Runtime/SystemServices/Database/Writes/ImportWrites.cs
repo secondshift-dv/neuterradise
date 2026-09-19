@@ -1557,6 +1557,240 @@ public sealed class ImportWrites
         return true;
     }
 
+    public async Task<bool> CommitReuseAssociationAndRetirementAsync(
+        Guid candidateAssetId,
+        Guid reusedAssetId,
+        Guid destinationProfileId,
+        Guid importUnitId,
+        bool allowExistingOwnerOutsideDestination,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(candidateAssetId, nameof(candidateAssetId));
+        EnsureNonEmpty(reusedAssetId, nameof(reusedAssetId));
+        EnsureNonEmpty(destinationProfileId, nameof(destinationProfileId));
+        EnsureNonEmpty(importUnitId, nameof(importUnitId));
+        if (candidateAssetId == reusedAssetId)
+        {
+            return false;
+        }
+
+        await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = CatalogTransaction.Begin(connection);
+
+        await using var read = transaction.CreateCommand(
+            """
+            SELECT candidate.state, candidate.retirement_reason,
+                   candidate.sha256, candidate.byte_length, candidate.bundle_sha256,
+                   candidate.dependency_status, candidate.dependency_discovery_state,
+                   reused.state, reused.sha256, reused.byte_length, reused.bundle_sha256,
+                   reused.dependency_status, reused.dependency_discovery_state,
+                   reused.current_managed_relative_path, reused.current_managed_file_name,
+                   EXISTS(
+                       SELECT 1
+                       FROM trash_entries te
+                       WHERE te.entity_type = 'ASSET'
+                         AND te.entity_id = reused.asset_id
+                         AND te.state IN ('PENDING','EXECUTING')
+                   )
+            FROM assets candidate
+            JOIN assets reused ON reused.asset_id = $reusedId
+            WHERE candidate.asset_id = $candidateId;
+            """);
+        read.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+        read.Parameters.AddWithValue("$reusedId", DbGuid.Format(reusedAssetId));
+
+        string candidateState;
+        string? candidateReason;
+        string? candidateSha;
+        long? candidateLength;
+        string? candidateBundle;
+        string candidateDependency;
+        string candidateDiscovery;
+        string reusedState;
+        string? reusedSha;
+        long? reusedLength;
+        string? reusedBundle;
+        string reusedDependency;
+        string reusedDiscovery;
+        string? reusedPath;
+        string? reusedName;
+        bool reusedTrashReserved;
+
+        await using (var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            candidateState = reader.GetString(0);
+            candidateReason = reader.IsDBNull(1) ? null : reader.GetString(1);
+            candidateSha = reader.IsDBNull(2) ? null : reader.GetString(2);
+            candidateLength = reader.IsDBNull(3) ? null : reader.GetInt64(3);
+            candidateBundle = reader.IsDBNull(4) ? null : reader.GetString(4);
+            candidateDependency = reader.GetString(5);
+            candidateDiscovery = reader.GetString(6);
+            reusedState = reader.GetString(7);
+            reusedSha = reader.IsDBNull(8) ? null : reader.GetString(8);
+            reusedLength = reader.IsDBNull(9) ? null : reader.GetInt64(9);
+            reusedBundle = reader.IsDBNull(10) ? null : reader.GetString(10);
+            reusedDependency = reader.GetString(11);
+            reusedDiscovery = reader.GetString(12);
+            reusedPath = reader.IsDBNull(13) ? null : reader.GetString(13);
+            reusedName = reader.IsDBNull(14) ? null : reader.GetString(14);
+            reusedTrashReserved = reader.GetInt32(15) == 1;
+        }
+
+        if (reusedTrashReserved
+            || !string.Equals(reusedState, "ACTIVE", StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(reusedPath)
+            || string.IsNullOrWhiteSpace(reusedName))
+        {
+            return false;
+        }
+
+        var packageAuthority = candidateBundle is not null || reusedBundle is not null;
+        var identityMatches = packageAuthority
+            ? candidateBundle is not null
+              && reusedBundle is not null
+              && string.Equals(candidateBundle, reusedBundle, StringComparison.Ordinal)
+              && candidateDiscovery == "COMPLETE"
+              && reusedDiscovery == "COMPLETE"
+              && candidateDependency is "COMPLETE" or "SELF_CONTAINED"
+              && reusedDependency is "COMPLETE" or "SELF_CONTAINED"
+            : candidateSha is not null
+              && reusedSha is not null
+              && candidateLength.HasValue
+              && reusedLength.HasValue
+              && candidateLength.Value == reusedLength.Value
+              && string.Equals(candidateSha, reusedSha, StringComparison.Ordinal);
+
+        if (!identityMatches
+            || (candidateState != "CANDIDATE"
+                && !(candidateState == "RETIRED"
+                     && string.Equals(candidateReason, "DEDUP_REUSED", StringComparison.Ordinal))))
+        {
+            return false;
+        }
+
+        await using (var destination = transaction.CreateCommand(
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM profiles
+                WHERE profile_id = $profileId
+                  AND trashed_at_ms IS NULL
+            );
+            """))
+        {
+            destination.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
+            var destinationValid = Convert.ToInt32(
+                await destination.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                System.Globalization.CultureInfo.InvariantCulture) == 1;
+            if (!destinationValid)
+            {
+                return false;
+            }
+        }
+
+        var hasDestinationRelation = false;
+        await using (var relation = transaction.CreateCommand(
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM profile_assets
+                WHERE profile_id = $profileId
+                  AND asset_id = $assetId
+            );
+            """))
+        {
+            relation.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
+            relation.Parameters.AddWithValue("$assetId", DbGuid.Format(reusedAssetId));
+            hasDestinationRelation = Convert.ToInt32(
+                await relation.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                System.Globalization.CultureInfo.InvariantCulture) == 1;
+        }
+
+        var hasActiveOwnerOutsideDestination = false;
+        if (allowExistingOwnerOutsideDestination)
+        {
+            await using var owner = transaction.CreateCommand(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM profile_assets pa
+                    JOIN profiles p ON p.profile_id = pa.profile_id
+                    WHERE pa.asset_id = $assetId
+                      AND pa.relation_type = 'OWNER'
+                      AND pa.profile_id <> $profileId
+                      AND p.trashed_at_ms IS NULL
+                );
+                """);
+            owner.Parameters.AddWithValue("$assetId", DbGuid.Format(reusedAssetId));
+            owner.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
+            hasActiveOwnerOutsideDestination = Convert.ToInt32(
+                await owner.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                System.Globalization.CultureInfo.InvariantCulture) == 1;
+        }
+
+        if (!hasDestinationRelation && !hasActiveOwnerOutsideDestination)
+        {
+            await using var insertRelation = transaction.CreateCommand(
+                """
+                INSERT INTO profile_assets(
+                    profile_id, asset_id, relation_type, provenance_key, created_at_ms)
+                VALUES(
+                    $profileId, $assetId, 'MANUAL', $provenanceKey, $now);
+                """);
+            insertRelation.Parameters.AddWithValue("$profileId", DbGuid.Format(destinationProfileId));
+            insertRelation.Parameters.AddWithValue("$assetId", DbGuid.Format(reusedAssetId));
+            insertRelation.Parameters.AddWithValue("$provenanceKey", $"import:{importUnitId:D}");
+            insertRelation.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
+            await insertRelation.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (candidateState == "CANDIDATE")
+        {
+            await using var retire = transaction.CreateCommand(
+                """
+                UPDATE assets
+                SET state = 'RETIRED',
+                    retirement_reason = 'DEDUP_REUSED',
+                    row_version = row_version + 1
+                WHERE asset_id = $candidateId
+                  AND state = 'CANDIDATE';
+                """);
+            retire.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+            if (await retire.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                return false;
+            }
+        }
+
+        await using (var cancelJobs = transaction.CreateCommand(
+            """
+            UPDATE jobs
+            SET state = 'CANCELLED',
+                not_before_ms = NULL,
+                completed_at_ms = $now,
+                error_code = 'OWNER_RETIRED',
+                error_detail_safe = 'The transient duplicate Candidate was retired after atomic REUSE commit.',
+                row_version = row_version + 1
+            WHERE owner_type = 'Asset'
+              AND owner_id = $candidateId
+              AND state IN ('PENDING','RUNNABLE','PAUSED','FAILED_RETRYABLE');
+            """))
+        {
+            cancelJobs.Parameters.AddWithValue("$candidateId", DbGuid.Format(candidateAssetId));
+            cancelJobs.Parameters.AddWithValue("$now", DbTime.Format(_timeProvider.GetUtcNow()));
+            await cancelJobs.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public async Task RetireCandidateAsync(
         Guid candidateAssetId,
         AssetRetirementReason reason,

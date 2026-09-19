@@ -149,9 +149,24 @@ public sealed class TrashCoordinator
         return OperationResult<AssetTrashPlan>.Success(plan, plan.OperationId);
     }
 
-    public async Task<OperationResult<AssetTrashOutcome>> ExecuteAssetTrashAsync(
+    public Task<OperationResult<AssetTrashOutcome>> ExecuteAssetTrashAsync(
         AssetTrashPlan plan,
+        CancellationToken cancellationToken = default) =>
+        ExecuteAssetTrashCoreAsync(plan, rollbackImportUnitId: null, cancellationToken);
+
+    public Task<OperationResult<AssetTrashOutcome>> ExecuteAssetTrashAsync(
+        AssetTrashPlan plan,
+        Guid rollbackImportUnitId,
         CancellationToken cancellationToken = default)
+    {
+        EnsureNonEmpty(rollbackImportUnitId, nameof(rollbackImportUnitId));
+        return ExecuteAssetTrashCoreAsync(plan, rollbackImportUnitId, cancellationToken);
+    }
+
+    private async Task<OperationResult<AssetTrashOutcome>> ExecuteAssetTrashCoreAsync(
+        AssetTrashPlan plan,
+        Guid? rollbackImportUnitId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
@@ -210,6 +225,20 @@ public sealed class TrashCoordinator
                 return OperationResult<AssetTrashOutcome>.Conflict(
                     OperationErrorCode.TrashPlanStale,
                     "This media item changed since the move to Trash was prepared. Reload it and try again.");
+            }
+
+            if (rollbackImportUnitId is { } rollbackUnitId
+                && !await IsCancellationRollbackAssetEligibleAsync(
+                        connection,
+                        transaction: null,
+                        rollbackUnitId,
+                        plan.AssetId,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return OperationResult<AssetTrashOutcome>.Conflict(
+                    OperationErrorCode.TrashPlanStale,
+                    "Another import or published Profile relation now requires this media item; cancellation rollback preserved it.");
             }
 
             if (entry.State == TrashEntryState.Pending)
@@ -275,7 +304,11 @@ public sealed class TrashCoordinator
             }
         }
 
-        var commit = await CommitAssetTrashTransitionAsync(plan, cancellationToken).ConfigureAwait(false);
+        var commit = await CommitAssetTrashTransitionAsync(
+                plan,
+                rollbackImportUnitId,
+                cancellationToken)
+            .ConfigureAwait(false);
         var outcome = commit.Outcome;
 
         if (outcome.IsSuccess)
@@ -532,8 +565,69 @@ public sealed class TrashCoordinator
             .ConfigureAwait(false);
     }
 
+    private static async Task<bool> IsCancellationRollbackAssetEligibleAsync(
+        SqliteConnection connection,
+        CatalogTransaction? transaction,
+        Guid rollbackImportUnitId,
+        Guid assetId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = transaction is null
+            ? connection.CreateCommand()
+            : transaction.CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM import_units self
+                JOIN import_items mine ON mine.import_unit_id = self.import_unit_id
+                WHERE self.import_unit_id = $unitId
+                  AND self.state = 'CANCELLED'
+                  AND mine.candidate_asset_id = $assetId
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM import_items other
+                      JOIN import_units consumer ON consumer.import_unit_id = other.import_unit_id
+                      WHERE other.import_unit_id <> $unitId
+                        AND (other.candidate_asset_id = $assetId OR other.reused_asset_id = $assetId)
+                        AND consumer.state NOT IN (
+                            'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                            'CANCELLED','FAILED_TERMINAL'
+                        )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM import_asset_interests interest
+                      JOIN import_units consumer ON consumer.import_unit_id = interest.import_unit_id
+                      WHERE interest.import_unit_id <> $unitId
+                        AND interest.asset_id = $assetId
+                        AND consumer.state NOT IN (
+                            'COMMITTED','COMPLETED','COMMITTED_WITH_CLEANUP_ATTENTION',
+                            'CANCELLED','FAILED_TERMINAL'
+                        )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM profile_assets relation
+                      WHERE relation.asset_id = $assetId
+                        AND (
+                            relation.publication_import_unit_id IS NULL
+                            OR relation.publication_import_unit_id <> $unitId
+                        )
+                  )
+            );
+            """;
+        command.Parameters.AddWithValue("$unitId", DbGuid.Format(rollbackImportUnitId));
+        command.Parameters.AddWithValue("$assetId", DbGuid.Format(assetId));
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(
+            result,
+            System.Globalization.CultureInfo.InvariantCulture) == 1;
+    }
+
     private async Task<AssetTrashCommitResult> CommitAssetTrashTransitionAsync(
         AssetTrashPlan plan,
+        Guid? rollbackImportUnitId,
         CancellationToken cancellationToken)
     {
         await using var lease = await _writeCoordinator.EnterAsync(cancellationToken).ConfigureAwait(false);
@@ -569,6 +663,22 @@ public sealed class TrashCoordinator
                 OperationResult<AssetTrashOutcome>.Conflict(
                     OperationErrorCode.TrashPlanStale,
                     "This media item changed while it was being moved to Trash."),
+                plan);
+        }
+
+        if (rollbackImportUnitId is { } rollbackUnitId
+            && !await IsCancellationRollbackAssetEligibleAsync(
+                    connection,
+                    transaction,
+                    rollbackUnitId,
+                    plan.AssetId,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return new AssetTrashCommitResult(
+                OperationResult<AssetTrashOutcome>.Conflict(
+                    OperationErrorCode.TrashPlanStale,
+                    "Cancellation rollback authority changed before the Trash commit."),
                 plan);
         }
 
